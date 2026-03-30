@@ -12,6 +12,11 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Worksheet\Drawing;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Border;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class Ctrl extends Controller
@@ -1411,6 +1416,11 @@ class Ctrl extends Controller
                 'description' => 'Access Financial Report page.',
             ],
             [
+                'key' => 'backup',
+                'label' => 'Backup Database',
+                'description' => 'Access Backup Database page.',
+            ],
+            [
                 'key' => 'recycle',
                 'label' => 'Recycle Bin',
                 'description' => 'Access Recycle Bin page.',
@@ -1446,6 +1456,7 @@ class Ctrl extends Controller
                 'user' => true,
                 'activity' => true,
                 'financial' => true,
+                'backup' => false,
                 'recycle' => false,
                 'permission' => false,
                 'setting' => false,
@@ -1457,6 +1468,7 @@ class Ctrl extends Controller
                 'user' => false,
                 'activity' => true,
                 'financial' => true,
+                'backup' => false,
                 'recycle' => false,
                 'permission' => false,
                 'setting' => false,
@@ -1467,6 +1479,7 @@ class Ctrl extends Controller
                 'user' => true,
                 'activity' => true,
                 'financial' => true,
+                'backup' => true,
                 'recycle' => true,
                 'permission' => true,
                 'setting' => true,
@@ -1592,7 +1605,7 @@ class Ctrl extends Controller
         }
 
         $level = strtolower(trim((string) $adminAuth['levelname']));
-        return in_array($level, ['admin', 'manager', 'superadmin'], true);
+        return in_array($level, ['admin', 'owner', 'manager', 'superadmin'], true);
     }
 
     private function isSuperAdmin(?array $adminAuth): bool
@@ -3110,15 +3123,13 @@ class Ctrl extends Controller
         $rows = DB::connection('mysql')
             ->table('neoura.user as u')
             ->leftJoin('neoura.employer as e', 'e.userid', '=', 'u.userid')
-            ->leftJoin('neoura.level as l', 'l.levelid', '=', 'u.levelid')
             ->select(
                 'u.userid',
                 'u.username',
                 'e.name as employer_name',
                 'e.email as employer_email',
                 'e.phonenumber as employer_phone',
-                'u.levelid',
-                'l.levelname'
+                'u.levelid'
             )
             ->orderBy('u.userid')
             ->get();
@@ -3126,7 +3137,7 @@ class Ctrl extends Controller
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('UserData');
-        $sheet->fromArray(['userid', 'username', 'name', 'email', 'phonenumber', 'levelid', 'levelname'], null, 'A1');
+        $sheet->fromArray(['userid', 'username', 'name', 'email', 'phonenumber', 'levelid'], null, 'A1');
 
         $cursor = 2;
         foreach ($rows as $row) {
@@ -3137,12 +3148,11 @@ class Ctrl extends Controller
                 (string) ($row->employer_email ?? ''),
                 (string) ($row->employer_phone ?? ''),
                 (int) ($row->levelid ?? 0),
-                (string) ($row->levelname ?? ''),
             ], null, 'A' . $cursor);
             $cursor++;
         }
 
-        foreach (range('A', 'G') as $column) {
+        foreach (range('A', 'F') as $column) {
             $sheet->getColumnDimension($column)->setAutoSize(true);
         }
 
@@ -3282,6 +3292,7 @@ class Ctrl extends Controller
                             ->where('userid', $targetUserId)
                             ->update([
                                 'username' => $username,
+                                'password' => Hash::make($username),
                                 'levelid' => $levelId,
                             ]);
 
@@ -3728,11 +3739,53 @@ class Ctrl extends Controller
             ->all();
     }
 
-    private function expenseRows(): array
+    private function ensureExpenseStorageSchema(): void
     {
-        return DB::connection('mysql')
+        $connection = DB::connection('mysql');
+        $schemaName = 'neoura';
+
+        $yearColumn = $connection->selectOne(
+            'SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+            [$schemaName, 'expense', 'expense_year']
+        );
+        if (!$yearColumn) {
+            $connection->statement('ALTER TABLE neoura.expense ADD COLUMN expense_year INT NULL AFTER cost');
+        }
+
+        $monthColumn = $connection->selectOne(
+            'SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+            [$schemaName, 'expense', 'expense_month']
+        );
+        if (!$monthColumn) {
+            $connection->statement('ALTER TABLE neoura.expense ADD COLUMN expense_month TINYINT NULL AFTER expense_year');
+        }
+
+        $currentYear = (int) date('Y');
+        $currentMonth = (int) date('n');
+        $connection->table('neoura.expense')
+            ->where(function ($query) {
+                $query->whereNull('expense_year')->orWhereNull('expense_month');
+            })
+            ->update([
+                'expense_year' => $currentYear,
+                'expense_month' => $currentMonth,
+            ]);
+    }
+
+    private function expenseRows(?int $year = null, ?int $month = null): array
+    {
+        $query = DB::connection('mysql')
             ->table('neoura.expense')
-            ->select('expenseid', 'expensename', 'cost')
+            ->select('expenseid', 'expensename', 'cost', 'expense_year', 'expense_month');
+
+        if ($year !== null) {
+            $query->where('expense_year', $year);
+        }
+        if ($month !== null) {
+            $query->where('expense_month', $month);
+        }
+
+        return $query
             ->orderByDesc('expenseid')
             ->get()
             ->map(function ($row) {
@@ -3745,9 +3798,70 @@ class Ctrl extends Controller
                     'cost_raw' => $rawCost,
                     'cost_value' => $costValue,
                     'cost_label' => $this->formatRupiah($costValue),
+                    'expense_year' => (int) ($row->expense_year ?? 0),
+                    'expense_month' => (int) ($row->expense_month ?? 0),
                 ];
             })
             ->all();
+    }
+
+    private function ensureExpenseMonthSeeded(int $year, int $month): bool
+    {
+        $existing = (int) DB::connection('mysql')
+            ->table('neoura.expense')
+            ->where('expense_year', $year)
+            ->where('expense_month', $month)
+            ->count();
+        if ($existing > 0) {
+            return false;
+        }
+
+        $previousYear = $year;
+        $previousMonth = $month - 1;
+        if ($previousMonth < 1) {
+            $previousMonth = 12;
+            $previousYear--;
+        }
+
+        $previousRows = DB::connection('mysql')
+            ->table('neoura.expense')
+            ->select('expensename')
+            ->where('expense_year', $previousYear)
+            ->where('expense_month', $previousMonth)
+            ->orderBy('expenseid')
+            ->get();
+
+        $names = collect($previousRows)
+            ->map(fn($row) => trim((string) ($row->expensename ?? '')))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($names)) {
+            return false;
+        }
+
+        $insertRows = [];
+        foreach ($names as $name) {
+            $insertRows[] = [
+                'expensename' => $name,
+                'cost' => '0',
+                'expense_year' => $year,
+                'expense_month' => $month,
+            ];
+        }
+
+        DB::connection('mysql')->table('neoura.expense')->insert($insertRows);
+        return true;
+    }
+
+    private function expenseTotalForMonth(int $year, int $month): int
+    {
+        $rows = $this->expenseRows($year, $month);
+        return array_reduce($rows, function ($carry, $row) {
+            return $carry + (int) ($row['cost_value'] ?? 0);
+        }, 0);
     }
 
     public function adminFinancialReport(Request $request)
@@ -3760,15 +3874,450 @@ class Ctrl extends Controller
             return $this->sidebarPermissionDenied($request);
         }
 
+        $this->ensureExpenseStorageSchema();
         $website = $this->websiteSettings();
         $sidebarServices = $this->sidebarServices();
+        $filters = $this->resolveFinancialReportFilters($request);
+        $seededFromPreviousMonth = false;
+        $currentYear = (int) date('Y');
+        $currentMonth = (int) date('n');
+        if ((int) $filters['selectedYear'] === $currentYear && (int) $filters['selectedMonth'] === $currentMonth) {
+            $seededFromPreviousMonth = $this->ensureExpenseMonthSeeded($currentYear, $currentMonth);
+        }
+        $reportData = $this->buildFinancialReportData(
+            (int) $filters['selectedYear'],
+            (int) $filters['selectedMonth']
+        );
 
+        $data = [
+            'title' => 'Financial Report | ' . $website['name'],
+            'adminAuth' => $adminAuth,
+            'showAdminMenu' => true,
+            'sidebarPermissionMap' => $this->sidebarPermissionMapForAuth($adminAuth),
+            'sidebarServices' => $sidebarServices,
+            'website' => $website,
+            'reportType' => $filters['reportType'],
+            'selectedYear' => $filters['selectedYear'],
+            'selectedMonth' => $filters['selectedMonth'],
+            'yearOptions' => $reportData['yearOptions'],
+            'dailyRows' => $reportData['dailyRows'],
+            'monthlyRows' => $reportData['monthlyRows'],
+            'yearlyRows' => $reportData['yearlyRows'],
+            'expenseRows' => $reportData['expenseRows'],
+            'expenseCostResetThisMonth' => $seededFromPreviousMonth,
+            'totalExpenseLabel' => $reportData['totalExpenseLabel'],
+            'netIncomeLabel' => $reportData['netIncomeLabel'],
+            'monthName' => $reportData['monthName'],
+            'summaryCards' => $reportData['summaryCards'],
+            'pageScript' => 'admin-financial-report.js',
+        ];
+
+        $this->renderParts(['all.header', 'all.menu', 'admin.financial-report', 'all.footer'], $data);
+    }
+
+    public function adminFinancialReportExportExcel(Request $request)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'financial')) {
+            return $this->sidebarPermissionDenied($request);
+        }
+
+        $this->ensureExpenseStorageSchema();
+        $website = $this->websiteSettings();
+        $target = $this->resolveFinancialReportExportTarget($request);
+        $snapshot = $this->buildFinancialSnapshot((string) $target['type'], (string) $target['period']);
+
+        $incomeValue = (int) ($snapshot['income'] ?? 0);
+        $outcomeValue = (int) ($snapshot['outcome'] ?? 0);
+        $finalRevenue = $incomeValue - $outcomeValue;
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Financial Report');
+        $sheet->mergeCells('A1:F1');
+        $sheet->setCellValue('A1', strtoupper((string) ($website['name'] ?? 'NEOURA')));
+        $sheet->mergeCells('A2:F2');
+        $sheet->setCellValue('A2', 'LAPORAN KEUANGAN');
+        $sheet->mergeCells('A3:F3');
+        $sheet->setCellValue('A3', 'Periode: ' . (string) ($snapshot['period_label'] ?? '-'));
+        $sheet->mergeCells('A4:F4');
+        $sheet->setCellValue('A4', 'Tipe Laporan: ' . ucfirst((string) ($snapshot['type'] ?? '-')));
+        $sheet->mergeCells('A5:F5');
+        $sheet->setCellValue('A5', 'Generated: ' . date('d M Y H:i'));
+
+        $sheet->setCellValue('A7', 'RINGKASAN');
+        $sheet->mergeCells('A7:F7');
+        $sheet->setCellValue('A8', 'Keterangan');
+        $sheet->mergeCells('A8:D8');
+        $sheet->setCellValue('E8', 'Jumlah (Rp)');
+        $sheet->mergeCells('E8:F8');
+
+        $sheet->setCellValue('A9', 'Total Income');
+        $sheet->mergeCells('A9:D9');
+        $sheet->setCellValue('E9', $incomeValue);
+        $sheet->mergeCells('E9:F9');
+
+        $sheet->setCellValue('A10', 'Total Outcome');
+        $sheet->mergeCells('A10:D10');
+        $sheet->setCellValue('E10', $outcomeValue);
+        $sheet->mergeCells('E10:F10');
+
+        $sheet->setCellValue('A11', 'Pendapatan Akhir (Income - Outcome)');
+        $sheet->mergeCells('A11:D11');
+        $sheet->setCellValue('E11', $finalRevenue);
+        $sheet->mergeCells('E11:F11');
+
+        $logoPath = trim((string) ($website['logo_path'] ?? ''));
+        $logoFilePath = $logoPath !== '' ? public_path(ltrim($logoPath, '/')) : '';
+        if ($logoFilePath !== '' && is_file($logoFilePath)) {
+            $drawing = new Drawing();
+            $drawing->setName('Website Logo');
+            $drawing->setDescription('Website Logo');
+            $drawing->setPath($logoFilePath);
+            $drawing->setHeight(64);
+            $drawing->setCoordinates('F1');
+            $drawing->setWorksheet($sheet);
+            $sheet->getRowDimension(1)->setRowHeight(52);
+            $sheet->getRowDimension(2)->setRowHeight(26);
+        }
+
+        $row = 13;
+        $sheet->setCellValue('A' . $row, 'DETAIL OUTCOME');
+        $sheet->mergeCells('A' . $row . ':F' . $row);
+        $row++;
+        $sheet->setCellValue('A' . $row, 'No');
+        $sheet->setCellValue('B' . $row, 'Expense');
+        $sheet->mergeCells('B' . $row . ':D' . $row);
+        $sheet->setCellValue('E' . $row, 'Biaya (Rp)');
+        $sheet->mergeCells('E' . $row . ':F' . $row);
+        $row++;
+
+        $index = 1;
+        foreach ((array) ($snapshot['outcome_detail_rows'] ?? []) as $detailRow) {
+            $sheet->setCellValue('A' . $row, $index);
+            $sheet->setCellValue('B' . $row, (string) ($detailRow['label'] ?? '-'));
+            $sheet->mergeCells('B' . $row . ':D' . $row);
+            $sheet->setCellValue('E' . $row, (int) ($detailRow['value'] ?? 0));
+            $sheet->mergeCells('E' . $row . ':F' . $row);
+            $sheet->getStyle('A' . $row . ':F' . $row)->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
+            $row++;
+            $index++;
+        }
+        if ($index === 1) {
+            $sheet->setCellValue('A' . $row, '-');
+            $sheet->setCellValue('B' . $row, 'No outcome detail');
+            $sheet->mergeCells('B' . $row . ':F' . $row);
+            $sheet->getStyle('A' . $row . ':F' . $row)->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
+            $row++;
+        }
+
+        $sheet->setCellValue('A' . $row, 'TOTAL OUTCOME');
+        $sheet->mergeCells('A' . $row . ':D' . $row);
+        $sheet->setCellValue('E' . $row, $outcomeValue);
+        $sheet->mergeCells('E' . $row . ':F' . $row);
+
+        $sheet->getStyle('A1:F1')->getFont()->setBold(true)->setSize(16);
+        $sheet->getStyle('A2:F2')->getFont()->setBold(true)->setSize(12);
+        $sheet->getStyle('A3:F5')->getFont()->setSize(10);
+        $sheet->getStyle('A1:F5')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+        $sheet->getStyle('A7:F7')->getFont()->setBold(true);
+        $sheet->getStyle('A7:F7')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('E9EEF5');
+        $sheet->getStyle('A8:F8')->getFont()->setBold(true);
+        $sheet->getStyle('A8:F8')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('F3F6FA');
+        $sheet->getStyle('A9:F11')->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
+        $sheet->getStyle('A11:F11')->getFont()->setBold(true);
+        $sheet->getStyle('A13:F13')->getFont()->setBold(true);
+        $sheet->getStyle('A13:F13')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('E9EEF5');
+        $sheet->getStyle('A14:F14')->getFont()->setBold(true);
+        $sheet->getStyle('A14:F14')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('F3F6FA');
+        $sheet->getStyle('A' . $row . ':F' . $row)->getFont()->setBold(true);
+        $sheet->getStyle('A' . $row . ':F' . $row)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('F9EFE8');
+        $sheet->getStyle('A' . $row . ':F' . $row)->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
+
+        $currencyFormat = '"Rp" #,##0';
+        $sheet->getStyle('E9:F11')->getNumberFormat()->setFormatCode($currencyFormat);
+        $sheet->getStyle('E15:F' . $row)->getNumberFormat()->setFormatCode($currencyFormat);
+        $sheet->getStyle('E8:F' . $row)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+        $sheet->getStyle('A14:A' . $row)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle('A8:F' . $row)->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
+
+        $sheet->getColumnDimension('A')->setWidth(7);
+        $sheet->getColumnDimension('B')->setWidth(22);
+        $sheet->getColumnDimension('C')->setWidth(18);
+        $sheet->getColumnDimension('D')->setWidth(18);
+        $sheet->getColumnDimension('E')->setWidth(18);
+        $sheet->getColumnDimension('F')->setWidth(16);
+
+        $filePath = tempnam(sys_get_temp_dir(), 'financial_report_');
+        (new Xlsx($spreadsheet))->save($filePath);
+        $filename = 'financial-report-' . $target['type'] . '-' . str_replace('-', '', (string) $target['period']) . '.xlsx';
+
+        return response()->download(
+            $filePath,
+            $filename,
+            ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
+        )->deleteFileAfterSend(true);
+    }
+
+    public function adminFinancialReportPrint(Request $request)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'financial')) {
+            return $this->sidebarPermissionDenied($request);
+        }
+
+        $this->ensureExpenseStorageSchema();
+        $website = $this->websiteSettings();
+        $target = $this->resolveFinancialReportExportTarget($request);
+        $snapshot = $this->buildFinancialSnapshot((string) $target['type'], (string) $target['period']);
+
+        return view('admin.financial-report-print', [
+            'website' => $website,
+            'snapshot' => $snapshot,
+        ]);
+    }
+
+    public function adminFinancialReportExportPdf(Request $request)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'financial')) {
+            return $this->sidebarPermissionDenied($request);
+        }
+        if (!class_exists('TCPDF')) {
+            return redirect()->route('admin.financial')->withErrors([
+                'financial' => 'TCPDF is not installed. Please install package tecnickcom/tcpdf first.',
+            ]);
+        }
+        $this->ensureExpenseStorageSchema();
+        $website = $this->websiteSettings();
+        $target = $this->resolveFinancialReportExportTarget($request);
+        $snapshot = $this->buildFinancialSnapshot((string) $target['type'], (string) $target['period']);
+
+        $pdf = new \TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
+        $pdf->SetCreator((string) ($website['name'] ?? 'Neoura'));
+        $pdf->SetAuthor((string) ($website['name'] ?? 'Neoura'));
+        $pdf->SetTitle('Financial Report');
+        $pdf->SetMargins(12, 12, 12);
+        $pdf->SetAutoPageBreak(true, 12);
+        $pdf->AddPage();
+        $pdf->SetFont('helvetica', '', 10);
+
+        $logoHtml = '';
+        $logoUrl = trim((string) ($website['logo_url'] ?? ''));
+        if ($logoUrl !== '') {
+            $logoHtml = '<img src="' . e($logoUrl) . '" style="height:38px;" />';
+        }
+
+        $outcomeRowsHtml = '';
+        foreach ((array) ($snapshot['outcome_detail_rows'] ?? []) as $detailRow) {
+            $outcomeRowsHtml .= '<tr>'
+                . '<td style="border:1px solid #cccccc; padding:6px;">' . e((string) ($detailRow['label'] ?? '-')) . '</td>'
+                . '<td style="border:1px solid #cccccc; padding:6px; text-align:right;">' . e((string) ($detailRow['value_label'] ?? 'Rp 0')) . '</td>'
+                . '</tr>';
+        }
+        if ($outcomeRowsHtml === '') {
+            $outcomeRowsHtml = '<tr><td colspan="2" style="border:1px solid #cccccc; padding:6px;">No outcome detail.</td></tr>';
+        }
+
+        $html = ''
+            . '<table cellspacing="0" cellpadding="0" width="100%"><tr>'
+            . '<td width="18%">' . $logoHtml . '</td>'
+            . '<td width="82%" style="text-align:right;"><h2 style="margin:0;">' . e((string) ($website['name'] ?? 'Neoura')) . '</h2><span>Financial Report</span></td>'
+            . '</tr></table>'
+            . '<p style="margin-top:10px;">Type: ' . e(ucfirst((string) ($snapshot['type'] ?? '-'))) . ' | Period: ' . e((string) ($snapshot['period_label'] ?? '-')) . '</p>'
+            . '<table cellspacing="0" cellpadding="0" width="100%">'
+            . '<tr><td style="border:1px solid #cccccc; padding:6px;">Income</td><td style="border:1px solid #cccccc; padding:6px; text-align:right;">' . e((string) ($snapshot['income_label'] ?? 'Rp 0')) . '</td></tr>'
+            . '<tr><td style="border:1px solid #cccccc; padding:6px;">Outcome</td><td style="border:1px solid #cccccc; padding:6px; text-align:right;">' . e((string) ($snapshot['outcome_label'] ?? 'Rp 0')) . '</td></tr>'
+            . '<tr><td style="border:1px solid #cccccc; padding:6px;">Net</td><td style="border:1px solid #cccccc; padding:6px; text-align:right;">' . e((string) ($snapshot['net_label'] ?? 'Rp 0')) . '</td></tr>'
+            . '</table>'
+            . '<br><h3 style="margin-bottom:8px;">Outcome Detail</h3>'
+            . '<table cellspacing="0" cellpadding="0" width="100%"><thead><tr>'
+            . '<th style="border:1px solid #cccccc; padding:6px; background:#f5f5f5; text-align:left;">Item</th>'
+            . '<th style="border:1px solid #cccccc; padding:6px; background:#f5f5f5; text-align:right;">Cost</th>'
+            . '</tr></thead><tbody>' . $outcomeRowsHtml . '</tbody></table>';
+
+        $pdf->writeHTML($html, true, false, true, false, '');
+        $binary = $pdf->Output('financial-report.pdf', 'S');
+        $filename = 'financial-report-' . $target['type'] . '-' . str_replace('-', '', (string) $target['period']) . '.pdf';
+
+        return response($binary, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ]);
+    }
+
+    private function resolveFinancialReportExportTarget(Request $request): array
+    {
+        $type = strtolower(trim((string) $request->query('type', 'daily')));
+        if (!in_array($type, ['daily', 'monthly', 'yearly'], true)) {
+            $type = 'daily';
+        }
+
+        $period = trim((string) $request->query('period', ''));
+        if ($type === 'daily' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $period) === 1) {
+            return ['type' => $type, 'period' => $period];
+        }
+        if ($type === 'monthly' && preg_match('/^\d{4}-\d{2}$/', $period) === 1) {
+            return ['type' => $type, 'period' => $period];
+        }
+        if ($type === 'yearly' && preg_match('/^\d{4}$/', $period) === 1) {
+            return ['type' => $type, 'period' => $period];
+        }
+
+        $filters = $this->resolveFinancialReportFilters($request);
+        if ($type === 'monthly') {
+            return [
+                'type' => $type,
+                'period' => sprintf('%04d-%02d', (int) $filters['selectedYear'], (int) $filters['selectedMonth']),
+            ];
+        }
+        if ($type === 'yearly') {
+            return [
+                'type' => $type,
+                'period' => sprintf('%04d', (int) $filters['selectedYear']),
+            ];
+        }
+
+        return [
+            'type' => 'daily',
+            'period' => date('Y-m-d'),
+        ];
+    }
+
+    private function buildFinancialSnapshot(string $type, string $period): array
+    {
+        $normalizedType = strtolower(trim($type));
+        if (!in_array($normalizedType, ['daily', 'monthly', 'yearly'], true)) {
+            $normalizedType = 'daily';
+        }
+
+        $incomeEntries = $this->approvedPaymentIncomeEntries();
+        $income = 0;
+        $outcome = 0;
+        $outcomeDetailRows = [];
+        $periodLabel = $period;
+
+        if ($normalizedType === 'yearly') {
+            $year = (int) $period;
+            if ($year < 2000 || $year > 3000) {
+                $year = (int) date('Y');
+            }
+            $period = sprintf('%04d', $year);
+            $periodLabel = $period;
+
+            foreach ($incomeEntries as $entry) {
+                $entryDate = (string) ($entry['payment_date'] ?? '');
+                if (substr($entryDate, 0, 4) === $period) {
+                    $income += (int) ($entry['amount'] ?? 0);
+                }
+            }
+
+            for ($month = 1; $month <= 12; $month++) {
+                $monthOutcome = $this->expenseTotalForMonth($year, $month);
+                $outcome += $monthOutcome;
+                $outcomeDetailRows[] = [
+                    'label' => date('F', mktime(0, 0, 0, $month, 1)) . ' ' . $year,
+                    'value' => $monthOutcome,
+                    'value_label' => $this->formatRupiah($monthOutcome),
+                ];
+            }
+        } elseif ($normalizedType === 'monthly') {
+            if (preg_match('/^(\d{4})-(\d{2})$/', $period, $matches) !== 1) {
+                $period = date('Y-m');
+                preg_match('/^(\d{4})-(\d{2})$/', $period, $matches);
+            }
+            $year = (int) ($matches[1] ?? date('Y'));
+            $month = (int) ($matches[2] ?? date('m'));
+            if ($month < 1 || $month > 12) {
+                $month = (int) date('n');
+            }
+            $period = sprintf('%04d-%02d', $year, $month);
+            $periodLabel = date('F Y', mktime(0, 0, 0, $month, 1, $year));
+
+            foreach ($incomeEntries as $entry) {
+                $entryDate = (string) ($entry['payment_date'] ?? '');
+                if (substr($entryDate, 0, 7) === $period) {
+                    $income += (int) ($entry['amount'] ?? 0);
+                }
+            }
+
+            $expenseRows = $this->expenseRows($year, $month);
+            foreach ($expenseRows as $expenseRow) {
+                $value = (int) ($expenseRow['cost_value'] ?? 0);
+                $outcome += $value;
+                $outcomeDetailRows[] = [
+                    'label' => (string) ($expenseRow['expensename'] ?? '-'),
+                    'value' => $value,
+                    'value_label' => $this->formatRupiah($value),
+                ];
+            }
+        } else {
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $period) !== 1) {
+                $period = date('Y-m-d');
+            }
+            $timestamp = strtotime($period);
+            if ($timestamp === false) {
+                $period = date('Y-m-d');
+                $timestamp = strtotime($period);
+            }
+            $year = (int) date('Y', $timestamp ?: time());
+            $month = (int) date('n', $timestamp ?: time());
+            $daysInMonth = max(1, (int) cal_days_in_month(CAL_GREGORIAN, $month, $year));
+            $periodLabel = date('d F Y', $timestamp ?: time());
+
+            foreach ($incomeEntries as $entry) {
+                if ((string) ($entry['payment_date'] ?? '') === $period) {
+                    $income += (int) ($entry['amount'] ?? 0);
+                }
+            }
+
+            $expenseRows = $this->expenseRows($year, $month);
+            foreach ($expenseRows as $expenseRow) {
+                $monthlyCost = (int) ($expenseRow['cost_value'] ?? 0);
+                $dailyShare = (int) round($monthlyCost / $daysInMonth);
+                $outcome += $dailyShare;
+                $outcomeDetailRows[] = [
+                    'label' => (string) ($expenseRow['expensename'] ?? '-') . ' / day',
+                    'value' => $dailyShare,
+                    'value_label' => $this->formatRupiah($dailyShare),
+                ];
+            }
+        }
+
+        $net = $income - $outcome;
+
+        return [
+            'type' => $normalizedType,
+            'period' => $period,
+            'period_label' => $periodLabel,
+            'income' => $income,
+            'income_label' => $this->formatRupiah($income),
+            'outcome' => $outcome,
+            'outcome_label' => $this->formatRupiah($outcome),
+            'net' => $net,
+            'net_label' => $this->formatRupiah($net),
+            'outcome_detail_rows' => $outcomeDetailRows,
+        ];
+    }
+
+    private function resolveFinancialReportFilters(Request $request): array
+    {
         $currentYear = (int) date('Y');
         $currentMonth = (int) date('n');
         $reportType = strtolower(trim((string) $request->query('type', 'daily')));
         if (!in_array($reportType, ['daily', 'monthly', 'yearly'], true)) {
             $reportType = 'daily';
         }
+
         $selectedYear = (int) $request->query('year', $currentYear);
         if ($selectedYear < 2000 || $selectedYear > 3000) {
             $selectedYear = $currentYear;
@@ -3779,6 +4328,16 @@ class Ctrl extends Controller
             $selectedMonth = $currentMonth;
         }
 
+        return [
+            'reportType' => $reportType,
+            'selectedYear' => $selectedYear,
+            'selectedMonth' => $selectedMonth,
+        ];
+    }
+
+    private function buildFinancialReportData(int $selectedYear, int $selectedMonth): array
+    {
+        $currentYear = (int) date('Y');
         $entries = $this->approvedPaymentIncomeEntries();
         $daily = [];
         $monthly = [];
@@ -3827,6 +4386,7 @@ class Ctrl extends Controller
             $timestamp = strtotime((string) $dateKey);
             return [
                 'label' => $timestamp !== false ? date('d M Y', $timestamp) : (string) $dateKey,
+                'period' => (string) $dateKey,
                 'transactions' => (int) ($row['transactions'] ?? 0),
                 'income' => (int) ($row['income'] ?? 0),
                 'income_label' => $this->formatRupiah((int) ($row['income'] ?? 0)),
@@ -3837,6 +4397,7 @@ class Ctrl extends Controller
             $timestamp = strtotime((string) $monthKey . '-01');
             return [
                 'label' => $timestamp !== false ? date('F Y', $timestamp) : (string) $monthKey,
+                'period' => (string) $monthKey,
                 'transactions' => (int) ($row['transactions'] ?? 0),
                 'income' => (int) ($row['income'] ?? 0),
                 'income_label' => $this->formatRupiah((int) ($row['income'] ?? 0)),
@@ -3846,6 +4407,7 @@ class Ctrl extends Controller
         $yearlyRows = collect($yearly)->map(function ($row, $yearKey) {
             return [
                 'label' => (string) $yearKey,
+                'period' => (string) $yearKey,
                 'transactions' => (int) ($row['transactions'] ?? 0),
                 'income' => (int) ($row['income'] ?? 0),
                 'income_label' => $this->formatRupiah((int) ($row['income'] ?? 0)),
@@ -3880,24 +4442,15 @@ class Ctrl extends Controller
             $carry['income'] += (int) ($row['income'] ?? 0);
             return $carry;
         }, ['transactions' => 0, 'income' => 0]);
-        $expenseRows = $this->expenseRows();
+
+        $expenseRows = $this->expenseRows($selectedYear, $selectedMonth);
         $totalExpense = array_reduce($expenseRows, function ($carry, $row) {
             $carry += (int) ($row['cost_value'] ?? 0);
             return $carry;
         }, 0);
         $netIncome = (int) ($allTimeSummary['income'] ?? 0) - $totalExpense;
 
-        $data = [
-            'title' => 'Financial Report | ' . $website['name'],
-            'adminAuth' => $adminAuth,
-            'showAdminMenu' => true,
-            'sidebarPermissionMap' => $this->sidebarPermissionMapForAuth($adminAuth),
-            'sidebarServices' => $sidebarServices,
-            'website' => $website,
-
-            'reportType' => $reportType,
-            'selectedYear' => $selectedYear,
-            'selectedMonth' => $selectedMonth,
+        return [
             'yearOptions' => $yearOptions,
             'dailyRows' => $dailyRows,
             'monthlyRows' => $monthlyRows,
@@ -3938,10 +4491,58 @@ class Ctrl extends Controller
                     'meta' => 'income - outcome',
                 ],
             ],
-            'pageScript' => 'admin-financial-report.js',
         ];
+    }
 
-        $this->renderParts(['all.header', 'all.menu', 'admin.financial-report', 'all.footer'], $data);
+    private function resolveFinancialReportTableData(string $reportType, array $reportData): array
+    {
+        $type = strtolower(trim($reportType));
+        if (!in_array($type, ['daily', 'monthly', 'yearly'], true)) {
+            $type = 'daily';
+        }
+
+        if ($type === 'monthly') {
+            $rows = collect($reportData['monthlyRows'] ?? [])->map(fn($row) => [
+                (string) ($row['label'] ?? '-'),
+                (int) ($row['transactions'] ?? 0),
+                (string) ($row['income_label'] ?? 'Rp 0'),
+            ])->values()->all();
+
+            return [
+                'title' => 'Monthly Report',
+                'headers' => ['Month', 'Transactions', 'Income'],
+                'rows' => $rows,
+                'empty_message' => 'No approved payment data for selected year.',
+            ];
+        }
+
+        if ($type === 'yearly') {
+            $rows = collect($reportData['yearlyRows'] ?? [])->map(fn($row) => [
+                (string) ($row['label'] ?? '-'),
+                (int) ($row['transactions'] ?? 0),
+                (string) ($row['income_label'] ?? 'Rp 0'),
+            ])->values()->all();
+
+            return [
+                'title' => 'Yearly Report',
+                'headers' => ['Year', 'Transactions', 'Income'],
+                'rows' => $rows,
+                'empty_message' => 'No approved payment data yet.',
+            ];
+        }
+
+        $rows = collect($reportData['dailyRows'] ?? [])->map(fn($row) => [
+            (string) ($row['label'] ?? '-'),
+            (int) ($row['transactions'] ?? 0),
+            (string) ($row['income_label'] ?? 'Rp 0'),
+        ])->values()->all();
+
+        return [
+            'title' => 'Daily Report',
+            'headers' => ['Date', 'Transactions', 'Income'],
+            'rows' => $rows,
+            'empty_message' => 'No approved payment data for selected month.',
+        ];
     }
 
 
@@ -3955,6 +4556,8 @@ class Ctrl extends Controller
             return $this->sidebarPermissionDenied($request);
         }
 
+        $this->ensureExpenseStorageSchema();
+
         $expenseInputs = $request->input('expenses', []);
         if (!is_array($expenseInputs)) {
             $expenseInputs = [];
@@ -3964,6 +4567,15 @@ class Ctrl extends Controller
                 'name' => (string) $request->input('expense_name', ''),
                 'cost' => (string) $request->input('expense_cost', ''),
             ]];
+        }
+
+        $expenseYear = (int) $request->input('expense_year', date('Y'));
+        $expenseMonth = (int) $request->input('expense_month', date('n'));
+        if ($expenseYear < 2000 || $expenseYear > 3000) {
+            $expenseYear = (int) date('Y');
+        }
+        if ($expenseMonth < 1 || $expenseMonth > 12) {
+            $expenseMonth = (int) date('n');
         }
 
         $rowsToInsert = [];
@@ -3994,6 +4606,8 @@ class Ctrl extends Controller
             $rowsToInsert[] = [
                 'expensename' => $expenseName,
                 'cost' => (string) $amount,
+                'expense_year' => $expenseYear,
+                'expense_month' => $expenseMonth,
             ];
         }
 
@@ -4020,6 +4634,8 @@ class Ctrl extends Controller
             return $this->sidebarPermissionDenied($request);
         }
 
+        $this->ensureExpenseStorageSchema();
+
         $validated = $request->validate([
             'expense_name' => ['required', 'string', 'max:255'],
             'expense_cost' => ['required', 'string', 'max:255'],
@@ -4043,7 +4659,26 @@ class Ctrl extends Controller
             ]);
 
         if ($updated < 1) {
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Expense row not found.',
+                ], 404);
+            }
             return redirect()->route('admin.financial')->withErrors(['expense' => 'Expense row not found.']);
+        }
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'status' => 'ok',
+                'message' => 'Expense row updated.',
+                'expense' => [
+                    'expenseid' => $expenseid,
+                    'name' => $expenseName,
+                    'cost_raw' => (string) $amount,
+                    'cost_label' => $this->formatRupiah($amount),
+                ],
+            ]);
         }
 
         return redirect()->route('admin.financial')->with('status', 'Expense row updated.');
@@ -4895,11 +5530,17 @@ class Ctrl extends Controller
         // One-time temporary access: consume right after login page is opened.
         $request->session()->forget('admin_login_access_until');
         $formToken = Str::random(40);
+        $offlineLeft = random_int(1, 20);
+        $offlineRight = random_int(1, 20);
+        $offlineAnswer = $offlineLeft + $offlineRight;
         $request->session()->put('admin_login_form_token', $formToken);
         $request->session()->put('admin_login_form_expires_at', time() + 300);
+        $request->session()->put('admin_login_offline_captcha_answer', $offlineAnswer);
         $data = [
             'title' => 'Login | ' . $website['name'],
             'loginFormToken' => $formToken,
+            'recaptchaSiteKey' => trim((string) env('RECAPTCHA_SITE_KEY', '')),
+            'offlineCaptchaQuestion' => $offlineLeft . ' + ' . $offlineRight . ' = ?',
             'website' => $website,
             'pageScript' => 'password-visibility.js',
         ];
@@ -4915,6 +5556,9 @@ class Ctrl extends Controller
             'login_form_token' => ['required', 'string'],
             'latitude' => ['nullable', 'numeric'],
             'longitude' => ['nullable', 'numeric'],
+            'captcha_mode' => ['required', 'string', 'in:online,offline'],
+            'g-recaptcha-response' => ['nullable', 'string'],
+            'offline_captcha_answer' => ['nullable', 'string', 'max:20'],
         ]);
 
         $sessionToken = (string) $request->session()->get('admin_login_form_token', '');
@@ -4928,6 +5572,56 @@ class Ctrl extends Controller
             $request->session()->forget(['admin_login_form_token', 'admin_login_form_expires_at']);
 
             return response()->view('errors.login-denied', ['website' => $this->websiteSettings()], 403);
+        }
+
+        $captchaMode = strtolower(trim((string) ($validated['captcha_mode'] ?? 'offline')));
+        if ($captchaMode === 'online') {
+            $recaptchaSecret = trim((string) env('RECAPTCHA_SECRET_KEY', ''));
+            $recaptchaResponse = trim((string) ($validated['g-recaptcha-response'] ?? ''));
+            if ($recaptchaSecret === '') {
+                return back()->withErrors([
+                    'captcha' => 'Online captcha is not configured. Please contact administrator.',
+                ])->withInput($request->only('username', 'captcha_mode'));
+            }
+            if ($recaptchaResponse === '') {
+                return back()->withErrors([
+                    'captcha' => 'Please verify online captcha first.',
+                ])->withInput($request->only('username', 'captcha_mode'));
+            }
+
+            try {
+                $captchaVerifyResponse = Http::asForm()
+                    ->timeout(10)
+                    ->post('https://www.google.com/recaptcha/api/siteverify', [
+                        'secret' => $recaptchaSecret,
+                        'response' => $recaptchaResponse,
+                        'remoteip' => (string) $request->ip(),
+                    ]);
+
+                $captchaPayload = $captchaVerifyResponse->json();
+                if (!$captchaVerifyResponse->ok() || !is_array($captchaPayload) || !((bool) ($captchaPayload['success'] ?? false))) {
+                    return back()->withErrors([
+                        'captcha' => 'Online captcha verification failed.',
+                    ])->withInput($request->only('username', 'captcha_mode'));
+                }
+            } catch (\Throwable $e) {
+                return back()->withErrors([
+                    'captcha' => 'Unable to verify online captcha. Please try again.',
+                ])->withInput($request->only('username', 'captcha_mode'));
+            }
+        } else {
+            $expectedOfflineAnswer = (int) $request->session()->get('admin_login_offline_captcha_answer', -1);
+            $offlineAnswerRaw = trim((string) ($validated['offline_captcha_answer'] ?? ''));
+            if ($expectedOfflineAnswer < 0) {
+                return back()->withErrors([
+                    'captcha' => 'Offline captcha session expired. Please reload login page.',
+                ])->withInput($request->only('username', 'captcha_mode'));
+            }
+            if (!preg_match('/^-?\d+$/', $offlineAnswerRaw) || (int) $offlineAnswerRaw !== $expectedOfflineAnswer) {
+                return back()->withErrors([
+                    'captcha' => 'Offline captcha answer is incorrect.',
+                ])->withInput($request->only('username', 'captcha_mode', 'offline_captcha_answer'));
+            }
         }
 
         $user = DB::connection('mysql')
@@ -4964,7 +5658,11 @@ class Ctrl extends Controller
             ])->onlyInput('username');
         }
 
-        $request->session()->forget(['admin_login_form_token', 'admin_login_form_expires_at']);
+        $request->session()->forget([
+            'admin_login_form_token',
+            'admin_login_form_expires_at',
+            'admin_login_offline_captcha_answer',
+        ]);
         $request->session()->put('admin_auth', [
             'userid' => $user->userid,
             'username' => $user->username,
@@ -5004,6 +5702,7 @@ class Ctrl extends Controller
             'admin_login_access_until',
             'admin_login_form_token',
             'admin_login_form_expires_at',
+            'admin_login_offline_captcha_answer',
             'admin_activity_coords',
             'forgot_password_phone_otp',
             'forgot_password_phone_verified_userid',
@@ -5178,6 +5877,335 @@ class Ctrl extends Controller
         ];
 
         $this->renderParts(['all.header', 'all.menu', 'superadmin.setting', 'all.footer'], $data);
+    }
+
+    public function superAdminBackupDatabase(Request $request)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'backup')) {
+            return $this->sidebarPermissionDenied($request);
+        }
+
+        $website = $this->websiteSettings();
+        $showAdminMenu = $this->canSeeAdminMenu($adminAuth);
+        $sidebarServices = $this->sidebarServices();
+        $data = [
+            'title' => 'Backup Database | ' . $website['name'],
+            'adminAuth' => $adminAuth,
+            'showAdminMenu' => $showAdminMenu,
+            'sidebarPermissionMap' => $this->sidebarPermissionMapForAuth($adminAuth),
+            'sidebarServices' => $sidebarServices,
+            'website' => $website,
+        ];
+
+        $this->renderParts(['all.header', 'all.menu', 'superadmin.backup', 'all.footer'], $data);
+    }
+
+    public function superAdminBackupDatabaseExportSql(Request $request)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'backup')) {
+            return $this->sidebarPermissionDenied($request);
+        }
+
+        try {
+            $connection = DB::connection('mysql');
+            $database = $this->resolveBackupDatabaseName($connection);
+            $tables = collect($connection->select(
+                'SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = ? ORDER BY TABLE_NAME',
+                [$database, 'BASE TABLE']
+            ))
+                ->map(fn($row) => (string) ($row->TABLE_NAME ?? ''))
+                ->filter()
+                ->values()
+                ->all();
+
+            if (empty($tables)) {
+                return redirect()->route('superadmin.backup')->withErrors(['backup' => 'No table found to export.']);
+            }
+        } catch (\Throwable $e) {
+            return redirect()->route('superadmin.backup')->withErrors(['backup' => 'Failed to prepare export: ' . $e->getMessage()]);
+        }
+
+        $request->attributes->set('activity_action_override', 'Backup Database Export SQL');
+        $request->attributes->set('activity_detail_override', 'Exported SQL backup for database ' . $database . '.');
+        $filename = 'backup-' . $database . '-' . date('Ymd-His') . '.sql';
+
+        return response()->streamDownload(function () use ($connection, $database, $tables) {
+            echo "-- Neoura SQL Backup\n";
+            echo '-- Generated at: ' . now()->toDateTimeString() . "\n";
+            echo '-- Source database: ' . $database . "\n\n";
+            echo "SET NAMES utf8mb4;\n";
+            echo "SET FOREIGN_KEY_CHECKS=0;\n\n";
+
+            foreach ($tables as $tableName) {
+                $qualified = $this->escapeQualifiedTableName($database, $tableName);
+                $createRow = $connection->selectOne('SHOW CREATE TABLE ' . $qualified);
+                if (!$createRow) {
+                    continue;
+                }
+
+                $createTableSql = '';
+                foreach ((array) $createRow as $key => $value) {
+                    if (is_string($key) && str_starts_with($key, 'Create ')) {
+                        $createTableSql = (string) $value;
+                        break;
+                    }
+                }
+                if ($createTableSql === '') {
+                    continue;
+                }
+
+                $tableIdent = $this->escapeSqlIdentifier($tableName);
+                $createTableSql = str_replace($this->escapeSqlIdentifier($database) . '.', '', $createTableSql);
+
+                echo '-- --------------------------------------------------' . "\n";
+                echo '-- Table: ' . $tableName . "\n";
+                echo 'DROP TABLE IF EXISTS ' . $tableIdent . ";\n";
+                echo $createTableSql . ";\n\n";
+
+                $columns = collect($connection->select(
+                    'SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION',
+                    [$database, $tableName]
+                ))
+                    ->map(fn($row) => (string) ($row->COLUMN_NAME ?? ''))
+                    ->filter()
+                    ->values()
+                    ->all();
+
+                if (empty($columns)) {
+                    continue;
+                }
+
+                $selectColumns = implode(', ', array_map(fn($column) => $this->escapeSqlIdentifier($column), $columns));
+                $rows = $connection->select('SELECT ' . $selectColumns . ' FROM ' . $qualified);
+                if (empty($rows)) {
+                    echo "\n";
+                    continue;
+                }
+
+                $insertColumns = implode(', ', array_map(fn($column) => $this->escapeSqlIdentifier($column), $columns));
+                foreach (array_chunk($rows, 200) as $chunkRows) {
+                    $valueRows = [];
+                    foreach ($chunkRows as $row) {
+                        $rowArray = (array) $row;
+                        $valueCells = [];
+                        foreach ($columns as $column) {
+                            $valueCells[] = $this->sqlLiteral($rowArray[$column] ?? null);
+                        }
+                        $valueRows[] = '(' . implode(', ', $valueCells) . ')';
+                    }
+
+                    echo 'INSERT INTO ' . $tableIdent . ' (' . $insertColumns . ") VALUES\n";
+                    echo implode(",\n", $valueRows) . ";\n";
+                }
+                echo "\n";
+            }
+
+            echo "SET FOREIGN_KEY_CHECKS=1;\n";
+        }, $filename, [
+            'Content-Type' => 'application/sql; charset=UTF-8',
+        ]);
+    }
+
+    public function superAdminBackupDatabaseImportSql(Request $request)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'backup')) {
+            return $this->sidebarPermissionDenied($request);
+        }
+
+        $validated = $request->validate([
+            'backup_sql' => ['required', 'file', 'mimes:sql,txt', 'max:51200'],
+        ]);
+
+        $file = $validated['backup_sql'] ?? null;
+        if (!$file) {
+            return redirect()->route('superadmin.backup')->withErrors(['backup' => 'SQL file is required.']);
+        }
+
+        $sql = file_get_contents($file->getRealPath());
+        if (!is_string($sql) || trim($sql) === '') {
+            return redirect()->route('superadmin.backup')->withErrors(['backup' => 'Uploaded SQL file is empty.']);
+        }
+
+        $statements = $this->splitSqlStatements($sql);
+        if (empty($statements)) {
+            return redirect()->route('superadmin.backup')->withErrors(['backup' => 'No executable SQL statement found.']);
+        }
+
+        $executed = 0;
+        try {
+            $connection = DB::connection('mysql');
+            foreach ($statements as $statement) {
+                $normalized = ltrim($statement);
+                if ($normalized === '') {
+                    continue;
+                }
+                $connection->unprepared($statement);
+                $executed++;
+            }
+        } catch (\Throwable $e) {
+            return redirect()->route('superadmin.backup')->withErrors([
+                'backup' => 'SQL import failed at statement ' . ($executed + 1) . ': ' . $e->getMessage(),
+            ]);
+        }
+
+        $request->attributes->set('activity_action_override', 'Backup Database Import SQL');
+        $request->attributes->set('activity_detail_override', 'Imported SQL backup. Executed statements: ' . $executed . '.');
+
+        return redirect()->route('superadmin.backup')->with(
+            'status',
+            'Database restore completed. Executed statements: ' . $executed . '.'
+        );
+    }
+
+    private function resolveBackupDatabaseName($connection): string
+    {
+        $preferred = 'neoura';
+        $schemaExists = $connection->selectOne(
+            'SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ?',
+            [$preferred]
+        );
+        if ($schemaExists) {
+            return $preferred;
+        }
+
+        $current = trim((string) $connection->getDatabaseName());
+        if ($current !== '') {
+            return $current;
+        }
+
+        $fallback = $connection->selectOne('SELECT DATABASE() as db_name');
+        $fallbackName = trim((string) ($fallback->db_name ?? ''));
+        if ($fallbackName !== '') {
+            return $fallbackName;
+        }
+
+        throw new \RuntimeException('Unable to resolve database name.');
+    }
+
+    private function escapeSqlIdentifier(string $value): string
+    {
+        return '`' . str_replace('`', '``', $value) . '`';
+    }
+
+    private function escapeQualifiedTableName(string $database, string $table): string
+    {
+        return $this->escapeSqlIdentifier($database) . '.' . $this->escapeSqlIdentifier($table);
+    }
+
+    private function sqlLiteral(mixed $value): string
+    {
+        if ($value === null) {
+            return 'NULL';
+        }
+
+        if (is_bool($value)) {
+            return $value ? '1' : '0';
+        }
+
+        if (is_int($value) || is_float($value)) {
+            return (string) $value;
+        }
+
+        $stringValue = (string) $value;
+        $stringValue = str_replace(
+            ["\\", "\0", "\n", "\r", "\t", "\x1a", "'"],
+            ["\\\\", "\\0", "\\n", "\\r", "\\t", "\\Z", "\\'"],
+            $stringValue
+        );
+
+        return "'" . $stringValue . "'";
+    }
+
+    private function splitSqlStatements(string $sql): array
+    {
+        $statements = [];
+        $buffer = '';
+        $quote = '';
+        $escaped = false;
+        $length = strlen($sql);
+
+        for ($i = 0; $i < $length; $i++) {
+            $char = $sql[$i];
+            $next = $i + 1 < $length ? $sql[$i + 1] : '';
+
+            if ($quote !== '') {
+                $buffer .= $char;
+                if ($escaped) {
+                    $escaped = false;
+                    continue;
+                }
+                if ($char === '\\' && $quote !== '`') {
+                    $escaped = true;
+                    continue;
+                }
+                if ($char === $quote) {
+                    $quote = '';
+                }
+                continue;
+            }
+
+            if ($char === "'" || $char === '"' || $char === '`') {
+                $quote = $char;
+                $buffer .= $char;
+                continue;
+            }
+
+            if ($char === '-' && $next === '-') {
+                while ($i < $length && $sql[$i] !== "\n") {
+                    $i++;
+                }
+                continue;
+            }
+
+            if ($char === '#') {
+                while ($i < $length && $sql[$i] !== "\n") {
+                    $i++;
+                }
+                continue;
+            }
+
+            if ($char === '/' && $next === '*') {
+                $i += 2;
+                while ($i < $length - 1) {
+                    if ($sql[$i] === '*' && $sql[$i + 1] === '/') {
+                        $i++;
+                        break;
+                    }
+                    $i++;
+                }
+                continue;
+            }
+
+            if ($char === ';') {
+                $statement = trim($buffer);
+                if ($statement !== '') {
+                    $statements[] = $statement;
+                }
+                $buffer = '';
+                continue;
+            }
+
+            $buffer .= $char;
+        }
+
+        $tail = trim($buffer);
+        if ($tail !== '') {
+            $statements[] = $tail;
+        }
+
+        return $statements;
     }
 
     public function superAdminSettingUpdate(Request $request)

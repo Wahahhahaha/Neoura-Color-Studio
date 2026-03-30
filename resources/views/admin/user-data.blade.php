@@ -1,10 +1,14 @@
 <section class="section">
     <div class="container">
-        <div class="setting-wrap">
-            <div class="section-head">
-                <h1>User Data</h1>
-                <p>List of users.</p>
-                <div class="admin-service-card-actions">
+        <div class="setting-wrap user-data-shell">
+            <div class="section-head user-data-head">
+                <div class="user-data-head-copy">
+                    <p class="eyebrow">Administration</p>
+                    <h1>User Directory</h1>
+                    <p>Manage registered users with a streamlined, focused workspace.</p>
+                    <p class="user-data-meta">Total Users: {{ $userPagination['total'] ?? 0 }}</p>
+                </div>
+                <div class="admin-service-card-actions user-data-actions">
                     <a href="{{ route('admin.userdata.export_excel') }}" class="btn btn-outline">Export Excel (.xlsx)</a>
                     <button type="button" class="btn btn-outline" data-open-import-userdata-modal>Import Excel (.xlsx)</button>
                     <button type="button" class="btn" data-open-add-user-modal>Add User</button>
@@ -13,7 +17,7 @@
 
             <p class="setting-alert" data-userdata-feedback hidden></p>
 
-            <div class="admin-user-controls">
+            <div class="admin-user-controls user-data-controls">
                 <div class="admin-user-search-box">
                     <label for="userdata_search">Search</label>
                     <input
@@ -38,13 +42,13 @@
             </div>
 
             <div
-                class="admin-user-table-wrap"
+                class="admin-user-table-wrap user-data-table-shell"
                 data-userdata-table-wrap
                 data-fetch-url="{{ route('admin.userdata') }}"
                 data-reset-url-template="{{ route('admin.userdata.reset_password', ['userid' => '__USER_ID__']) }}"
                 data-delete-url-template="{{ route('admin.userdata.delete', ['userid' => '__USER_ID__']) }}"
             >
-                <table class="admin-user-table">
+                <table class="admin-user-table user-data-table">
                     <thead>
                         <tr>
                             <th>Username</th>
@@ -63,7 +67,7 @@
                                 <td>{{ $row['phonenumber'] }}</td>
                                 <td>
                                     <div class="admin-user-level-cell">
-                                        <span>{{ $row['level'] }}</span>
+                                        <span class="user-level-badge">{{ $row['level'] }}</span>
                                         <div class="admin-user-actions">
                                             <button
                                                 type="button"
@@ -92,7 +96,7 @@
                 </table>
             </div>
 
-            <div class="admin-user-pagination" data-userdata-pagination>
+            <div class="admin-user-pagination user-data-pagination" data-userdata-pagination>
                 <p class="admin-user-pagination-meta" data-userdata-pagination-meta>
                     Showing {{ $userPagination['from'] ?? 0 }}-{{ $userPagination['to'] ?? 0 }} of {{ $userPagination['total'] ?? 0 }}
                 </p>
@@ -111,7 +115,7 @@
 </section>
 
 <div
-    class="crop-modal service-fade-modal"
+    class="crop-modal service-fade-modal import-modal-center"
     data-import-userdata-modal
     hidden
 >

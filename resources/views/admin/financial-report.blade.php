@@ -4,9 +4,6 @@
             <div class="section-head">
                 <p class="eyebrow">Admin Panel</p>
                 <h1>Financial Report</h1>
-
-                <p>Financial report page is ready and can be filled with report content next.</p>
-            </div>
                 <p>Income is calculated from approved payments in Payment Validation.</p>
             </div>
             @if (session('status'))
@@ -15,6 +12,10 @@
             @if ($errors->any())
                 <p class="setting-alert error">{{ $errors->first() }}</p>
             @endif
+            @if (!empty($expenseCostResetThisMonth))
+                <p class="setting-alert success">Monthly expense reset applied. Expense names are kept, please input this month cost again.</p>
+            @endif
+            <p class="setting-alert" data-financial-feedback hidden></p>
 
             <div class="admin-user-table-wrap expense-receipt-card">
                 <div class="expense-receipt-head">
@@ -57,7 +58,7 @@
                                         type="text"
                                         name="expense_cost"
                                         form="{{ $editFormId }}"
-                                        value="{{ (string) ($row['cost_raw'] ?? '') }}"
+                                        value="{{ (int) ($row['cost_value'] ?? 0) > 0 ? (string) ($row['cost_raw'] ?? '') : '' }}"
                                         placeholder="Amount"
                                         required
                                     >
@@ -86,6 +87,8 @@
 
                 <form method="post" action="{{ route('admin.financial.expense.store') }}" class="setting-form expense-entry-form" data-expense-form>
                     @csrf
+                    <input type="hidden" name="expense_year" value="{{ (int) ($selectedYear ?? date('Y')) }}">
+                    <input type="hidden" name="expense_month" value="{{ (int) ($selectedMonth ?? date('n')) }}">
 
                     <table class="admin-user-table expense-entry-table">
                         <thead>
@@ -167,95 +170,148 @@
                 </div>
             </form>
 
-            <div class="admin-payment-grid" role="list">
-                @foreach (($summaryCards ?? []) as $card)
-                    <div class="admin-payment-cell" role="listitem">
-                        <span>{{ $card['label'] ?? '-' }}</span>
-                        <strong>{{ $card['income_label'] ?? 'Rp 0' }}</strong>
-                        <small>{{ (int) ($card['transactions'] ?? 0) }} {{ $card['meta'] ?? 'entry(ies)' }}</small>
-                    </div>
-                @endforeach
-            </div>
+            <div data-financial-print-area>
+                <div class="admin-payment-grid" role="list">
+                    @foreach (($summaryCards ?? []) as $card)
+                        <div class="admin-payment-cell" role="listitem">
+                            <span>{{ $card['label'] ?? '-' }}</span>
+                            <strong>{{ $card['income_label'] ?? 'Rp 0' }}</strong>
+                            <small>{{ (int) ($card['transactions'] ?? 0) }} {{ $card['meta'] ?? 'entry(ies)' }}</small>
+                        </div>
+                    @endforeach
+                </div>
 
-            @if (($reportType ?? 'daily') === 'daily')
-                <div class="admin-user-table-wrap">
-                    <h3>Daily Report - {{ $monthName ?? '-' }} {{ $selectedYear ?? '-' }}</h3>
-                    <table class="admin-user-table">
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Transactions</th>
-                                <th>Income</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @forelse (($dailyRows ?? []) as $row)
+                @if (($reportType ?? 'daily') === 'daily')
+                    <div class="admin-user-table-wrap">
+                        <h3>Daily Report - {{ $monthName ?? '-' }} {{ $selectedYear ?? '-' }}</h3>
+                        <table class="admin-user-table">
+                            <thead>
                                 <tr>
-                                    <td>{{ $row['label'] }}</td>
-                                    <td>{{ $row['transactions'] }}</td>
-                                    <td>{{ $row['income_label'] }}</td>
+                                    <th>Date</th>
+                                    <th>Transactions</th>
+                                    <th>Action</th>
                                 </tr>
-                            @empty
-                                <tr>
-                                <td colspan="3">No approved payment data for selected month.</td>
-                            </tr>
-                        @endforelse
-                    </tbody>
-                </table>
-                </div>
-            @elseif (($reportType ?? '') === 'monthly')
-                <div class="admin-user-table-wrap">
-                    <h3>Monthly Report - {{ $selectedYear ?? '-' }}</h3>
-                    <table class="admin-user-table">
-                        <thead>
-                            <tr>
-                                <th>Month</th>
-                                <th>Transactions</th>
-                                <th>Income</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @forelse (($monthlyRows ?? []) as $row)
-                                <tr>
-                                    <td>{{ $row['label'] }}</td>
-                                    <td>{{ $row['transactions'] }}</td>
-                                    <td>{{ $row['income_label'] }}</td>
+                            </thead>
+                            <tbody>
+                                @forelse (($dailyRows ?? []) as $row)
+                                    <tr>
+                                        <td>{{ $row['label'] }}</td>
+                                        <td>{{ $row['transactions'] }}</td>
+                                        <td class="financial-action-cell">
+                                            <span class="financial-income-actions">
+                                                <a
+                                                    href="{{ route('admin.financial.print', ['type' => 'daily', 'period' => ($row['period'] ?? '')]) }}"
+                                                    target="_blank"
+                                                    rel="noopener"
+                                                    class="btn btn-outline"
+                                                >Print</a>
+                                                <a
+                                                    href="{{ route('admin.financial.export_pdf', ['type' => 'daily', 'period' => ($row['period'] ?? '')]) }}"
+                                                    class="btn btn-outline"
+                                                >PDF</a>
+                                                <a
+                                                    href="{{ route('admin.financial.export_excel', ['type' => 'daily', 'period' => ($row['period'] ?? '')]) }}"
+                                                    class="btn btn-outline"
+                                                >Excel</a>
+                                            </span>
+                                        </td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                    <td colspan="3">No approved payment data for selected month.</td>
                                 </tr>
-                            @empty
+                            @endforelse
+                        </tbody>
+                    </table>
+                    </div>
+                @elseif (($reportType ?? '') === 'monthly')
+                    <div class="admin-user-table-wrap">
+                        <h3>Monthly Report - {{ $selectedYear ?? '-' }}</h3>
+                        <table class="admin-user-table">
+                            <thead>
                                 <tr>
-                                <td colspan="3">No approved payment data for selected year.</td>
-                            </tr>
-                        @endforelse
-                    </tbody>
-                </table>
-                </div>
-            @else
-                <div class="admin-user-table-wrap">
-                    <h3>Yearly Report</h3>
-                    <table class="admin-user-table">
-                        <thead>
-                            <tr>
-                                <th>Year</th>
-                                <th>Transactions</th>
-                                <th>Income</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @forelse (($yearlyRows ?? []) as $row)
-                                <tr>
-                                    <td>{{ $row['label'] }}</td>
-                                    <td>{{ $row['transactions'] }}</td>
-                                    <td>{{ $row['income_label'] }}</td>
+                                    <th>Month</th>
+                                    <th>Transactions</th>
+                                    <th>Action</th>
                                 </tr>
-                            @empty
+                            </thead>
+                            <tbody>
+                                @forelse (($monthlyRows ?? []) as $row)
+                                    <tr>
+                                        <td>{{ $row['label'] }}</td>
+                                        <td>{{ $row['transactions'] }}</td>
+                                        <td class="financial-action-cell">
+                                            <span class="financial-income-actions">
+                                                <a
+                                                    href="{{ route('admin.financial.print', ['type' => 'monthly', 'period' => ($row['period'] ?? '')]) }}"
+                                                    target="_blank"
+                                                    rel="noopener"
+                                                    class="btn btn-outline"
+                                                >Print</a>
+                                                <a
+                                                    href="{{ route('admin.financial.export_pdf', ['type' => 'monthly', 'period' => ($row['period'] ?? '')]) }}"
+                                                    class="btn btn-outline"
+                                                >PDF</a>
+                                                <a
+                                                    href="{{ route('admin.financial.export_excel', ['type' => 'monthly', 'period' => ($row['period'] ?? '')]) }}"
+                                                    class="btn btn-outline"
+                                                >Excel</a>
+                                            </span>
+                                        </td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                    <td colspan="3">No approved payment data for selected year.</td>
+                                </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                    </div>
+                @else
+                    <div class="admin-user-table-wrap">
+                        <h3>Yearly Report</h3>
+                        <table class="admin-user-table">
+                            <thead>
                                 <tr>
-                                <td colspan="3">No approved payment data yet.</td>
-                            </tr>
-                        @endforelse
-                    </tbody>
-                </table>
-                </div>
-            @endif
+                                    <th>Year</th>
+                                    <th>Transactions</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @forelse (($yearlyRows ?? []) as $row)
+                                    <tr>
+                                        <td>{{ $row['label'] }}</td>
+                                        <td>{{ $row['transactions'] }}</td>
+                                        <td class="financial-action-cell">
+                                            <span class="financial-income-actions">
+                                                <a
+                                                    href="{{ route('admin.financial.print', ['type' => 'yearly', 'period' => ($row['period'] ?? '')]) }}"
+                                                    target="_blank"
+                                                    rel="noopener"
+                                                    class="btn btn-outline"
+                                                >Print</a>
+                                                <a
+                                                    href="{{ route('admin.financial.export_pdf', ['type' => 'yearly', 'period' => ($row['period'] ?? '')]) }}"
+                                                    class="btn btn-outline"
+                                                >PDF</a>
+                                                <a
+                                                    href="{{ route('admin.financial.export_excel', ['type' => 'yearly', 'period' => ($row['period'] ?? '')]) }}"
+                                                    class="btn btn-outline"
+                                                >Excel</a>
+                                            </span>
+                                        </td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                    <td colspan="3">No approved payment data yet.</td>
+                                </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                    </div>
+                @endif
+            </div>
         </div>
     </div>
 </section>

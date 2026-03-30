@@ -48,6 +48,32 @@
                         </button>
                     </div>
 
+                    <div class="login-captcha-wrap" data-login-captcha-root data-recaptcha-site-key="{{ $recaptchaSiteKey ?? '' }}">
+                        <input type="hidden" name="captcha_mode" value="{{ old('captcha_mode', 'offline') }}" data-captcha-mode>
+
+                        <div class="login-captcha-online" data-captcha-online hidden>
+                            <p class="login-captcha-title">Security Check</p>
+                            <div class="login-recaptcha-box" data-recaptcha-widget></div>
+                            <p class="login-captcha-note">Please complete the security verification.</p>
+                        </div>
+
+                        <div class="login-captcha-offline" data-captcha-offline hidden>
+                            <label for="offline_captcha_answer">Security Check</label>
+                            <p class="login-captcha-note">Answer this question: <strong>{{ $offlineCaptchaQuestion ?? '1 + 1 = ?' }}</strong></p>
+                            <input
+                                type="text"
+                                id="offline_captcha_answer"
+                                name="offline_captcha_answer"
+                                value="{{ old('offline_captcha_answer') }}"
+                                placeholder="Enter result"
+                                inputmode="numeric"
+                                autocomplete="off"
+                            >
+                        </div>
+
+                        <p class="login-captcha-error" data-captcha-error hidden></p>
+                    </div>
+
                     <div class="login-actions">
                         <button type="submit" class="btn">Login</button>
                         <a href="{{ route('password.forgot.email') }}" class="forgot-link">Forgot password?</a>
@@ -57,4 +83,8 @@
         </div>
     </section>
 </main>
+
+@if (!empty($recaptchaSiteKey))
+    <script src="https://www.google.com/recaptcha/api.js?onload=onRecaptchaLoaded&render=explicit" async defer></script>
+@endif
 

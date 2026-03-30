@@ -161,7 +161,7 @@
             <td>${escapeHtml(user.phonenumber)}</td>
             <td>
                 <div class="admin-user-level-cell">
-                    <span>${escapeHtml(user.level)}</span>
+                    <span class="user-level-badge">${escapeHtml(user.level)}</span>
                     <div class="admin-user-actions">
                         <button type="button" class="admin-user-action-btn" title="Reset Password" aria-label="Reset Password" data-user-reset>
                             <svg viewBox="0 0 24 24" class="admin-icon" aria-hidden="true"><path d="M20 11a8 8 0 1 0 2 5.5M20 4v7h-7"/></svg>

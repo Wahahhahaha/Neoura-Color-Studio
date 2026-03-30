@@ -121,7 +121,7 @@
 </div>
 
 <div
-    class="crop-modal service-fade-modal"
+    class="crop-modal service-fade-modal import-modal-center"
     data-import-service-modal
     hidden
 >

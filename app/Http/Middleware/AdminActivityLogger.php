@@ -38,7 +38,7 @@ class AdminActivityLogger
         }
 
         $level = strtolower(trim((string) ($adminAuth['levelname'] ?? '')));
-        return in_array($level, ['admin', 'manager', 'superadmin'], true);
+        return in_array($level, ['admin', 'owner', 'manager', 'superadmin'], true);
     }
 
     private function shouldSkipAutoActivityLog(Request $request): bool

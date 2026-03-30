@@ -44,6 +44,9 @@ Route::get('/financial-report', [Ctrl::class, 'adminFinancialReport'])->name('ad
 Route::get('/financial-report', [Ctrl::class, 'adminFinancialReport'])->name('admin.financial');
 Route::post('/financial-report/expense', [Ctrl::class, 'adminFinancialExpenseStore'])->name('admin.financial.expense.store');
 Route::post('/financial-report/expense/{expenseid}/update', [Ctrl::class, 'adminFinancialExpenseUpdate'])->name('admin.financial.expense.update');
+Route::get('/financial-report/print', [Ctrl::class, 'adminFinancialReportPrint'])->name('admin.financial.print');
+Route::get('/financial-report/export-pdf', [Ctrl::class, 'adminFinancialReportExportPdf'])->name('admin.financial.export_pdf');
+Route::get('/financial-report/export-excel', [Ctrl::class, 'adminFinancialReportExportExcel'])->name('admin.financial.export_excel');
 
 Route::get('/userdata', [Ctrl::class, 'adminUserData'])->name('admin.userdata');
 Route::get('/userdata/export-excel', [Ctrl::class, 'exportUserDataExcel'])->name('admin.userdata.export_excel');
@@ -60,6 +63,9 @@ Route::get('/permission', [Ctrl::class, 'superAdminPermission'])->name('superadm
 Route::post('/permission', [Ctrl::class, 'superAdminPermissionUpdate'])->name('superadmin.permission.update');
 Route::get('/setting', [Ctrl::class, 'superAdminSetting'])->name('superadmin.setting');
 Route::post('/setting', [Ctrl::class, 'superAdminSettingUpdate'])->name('superadmin.setting.update');
+Route::get('/backup-database', [Ctrl::class, 'superAdminBackupDatabase'])->name('superadmin.backup');
+Route::post('/backup-database/export-sql', [Ctrl::class, 'superAdminBackupDatabaseExportSql'])->name('superadmin.backup.export_sql');
+Route::post('/backup-database/import-sql', [Ctrl::class, 'superAdminBackupDatabaseImportSql'])->name('superadmin.backup.import_sql');
 
 Route::get('/internal-dashboard', function () {
     return 'Internal dashboard: access granted.';

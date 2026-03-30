@@ -73,6 +73,16 @@
                 'require_permission' => true,
             ],
             [
+                'key' => 'backup',
+                'label' => 'Backup Database',
+                'title' => 'Backup Database',
+                'route_name' => 'superadmin.backup',
+                'href' => route('superadmin.backup'),
+                'icon' => 'M12 3v8m0 0 3-3m-3 3-3-3M4 14h16v5H4z',
+                'always' => false,
+                'require_permission' => true,
+            ],
+            [
                 'key' => 'recycle',
                 'label' => 'Recyclebin',
                 'title' => 'Recyclebin',
