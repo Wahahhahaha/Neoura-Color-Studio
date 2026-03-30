@@ -1,0 +1,4488 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
+
+class Ctrl extends Controller
+{
+    private array $defaultContact = [
+        'phone' => '+62 812-3456-7890',
+        'instagram' => '@neoracolorstudio',
+        'address' => 'Jl. Kemang Raya No. 18, Jakarta Selatan, Indonesia',
+        'maps' => 'https://maps.google.com/?q=Kemang+Raya+18+Jakarta',
+    ];
+
+    private function renderParts(array $parts, array $data = []): void
+    {
+        foreach ($parts as $part) {
+            echo view($part, $data);
+        }
+    }
+
+    private function activityLogFile(): string
+    {
+        return storage_path('app/activity-log.json');
+    }
+
+    private function activityLogEntries(): array
+    {
+        $file = $this->activityLogFile();
+        if (!is_file($file)) {
+            return [];
+        }
+
+        $raw = file_get_contents($file);
+        $decoded = json_decode((string) $raw, true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        return collect($decoded)
+            ->filter(fn($entry) => is_array($entry))
+            ->values()
+            ->all();
+    }
+
+    private function saveActivityLogEntries(array $entries): void
+    {
+        $normalized = array_values(
+            collect($entries)
+                ->filter(fn($entry) => is_array($entry))
+                ->take(5000)
+                ->all()
+        );
+
+        file_put_contents(
+            $this->activityLogFile(),
+            json_encode($normalized, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+        );
+    }
+
+    private function shouldSkipAutoActivityLog(Request $request): bool
+    {
+        $routeName = (string) optional($request->route())->getName();
+        $skipRoutes = [
+            'admin.logo.click',
+        ];
+
+        return in_array($routeName, $skipRoutes, true);
+    }
+
+    private function sanitizeActivityPayload(array $payload): array
+    {
+        $sensitiveKeys = [
+            'password',
+            'new_password',
+            'new_password_confirmation',
+            'current_password',
+            'otp_code',
+            'login_form_token',
+            '_token',
+            'systemlogo',
+        ];
+
+        $result = [];
+        foreach ($payload as $key => $value) {
+            $normalizedKey = strtolower(trim((string) $key));
+            if (in_array($normalizedKey, $sensitiveKeys, true)) {
+                continue;
+            }
+            if (is_array($value)) {
+                $result[$key] = collect($value)->map(function ($item) {
+                    if (is_scalar($item) || $item === null) {
+                        return (string) $item;
+                    }
+
+                    return '[complex]';
+                })->values()->all();
+                continue;
+            }
+
+            if (is_scalar($value) || $value === null) {
+                $result[$key] = (string) $value;
+            }
+        }
+
+        return $result;
+    }
+
+    private function resolveActivityCoordinates(Request $request): array
+    {
+        $sessionCoords = $request->session()->get('admin_activity_coords');
+        $sessionLat = is_array($sessionCoords) ? trim((string) ($sessionCoords['latitude'] ?? '')) : '';
+        $sessionLng = is_array($sessionCoords) ? trim((string) ($sessionCoords['longitude'] ?? '')) : '';
+
+        $lat = trim((string) (
+            $request->input('latitude')
+                ?? $request->query('latitude')
+                ?? $request->header('X-Latitude')
+                ?? $sessionLat
+                ?? ''
+        ));
+        $lng = trim((string) (
+            $request->input('longitude')
+                ?? $request->query('longitude')
+                ?? $request->header('X-Longitude')
+                ?? $sessionLng
+                ?? ''
+        ));
+
+        return [
+            'latitude' => $lat !== '' ? $lat : '-',
+            'longitude' => $lng !== '' ? $lng : '-',
+        ];
+    }
+
+    private function resolveActivityActionLabel(Request $request): string
+    {
+        $routeName = (string) optional($request->route())->getName();
+        $method = strtoupper((string) $request->method());
+        $map = [
+            'login.submit' => 'Login',
+            'logout' => 'Logout',
+            'admin.service.store' => 'Create Service',
+            'admin.service.update' => 'Update Service',
+            'admin.service.delete' => 'Delete Service',
+            'admin.userdata.store' => 'Create User',
+            'admin.userdata.reset_password' => 'Reset User Password',
+            'admin.userdata.delete' => 'Delete User',
+            'admin.payment.update' => 'Update Payment Validation',
+            'account.update' => 'Update Account',
+            'superadmin.recyclebin.restore' => 'Restore Recycle Item',
+            'superadmin.recyclebin.delete_permanent' => 'Delete Recycle Item Permanently',
+            'superadmin.setting.update' => 'Update Setting',
+            'superadmin.permission.update' => 'Update Sidebar Permission',
+            'carousel.update' => 'Update Home Carousel',
+            'about.update' => 'Update About Content',
+        ];
+
+        if ($routeName !== '' && isset($map[$routeName])) {
+            return $map[$routeName];
+        }
+
+        if ($routeName !== '') {
+            return $method . ' ' . $routeName;
+        }
+
+        return $method . ' ' . trim((string) $request->path());
+    }
+
+    private function resolveActivityDetail(Request $request, int $statusCode): string
+    {
+        $routeName = (string) optional($request->route())->getName();
+        $payload = $request->isMethod('get')
+            ? $this->sanitizeActivityPayload((array) $request->query())
+            : $this->sanitizeActivityPayload((array) $request->except(['_token']));
+
+        $detail = [
+            'route' => $routeName !== '' ? $routeName : trim((string) $request->path()),
+            'status_code' => $statusCode,
+        ];
+
+        if (!empty($payload)) {
+            $detail['payload'] = $payload;
+        }
+
+        $json = json_encode($detail, JSON_UNESCAPED_SLASHES);
+        if (!is_string($json) || trim($json) === '') {
+            return '-';
+        }
+
+        return $json;
+    }
+
+    private function appendActivityLog(Request $request, ?array $adminAuth, int $statusCode = 200): void
+    {
+        $coordinates = $this->resolveActivityCoordinates($request);
+        $entries = $this->activityLogEntries();
+
+        array_unshift($entries, [
+            'activity_id' => (string) Str::uuid(),
+            'name' => trim((string) ($adminAuth['username'] ?? '')) !== ''
+                ? trim((string) ($adminAuth['username'] ?? ''))
+                : (trim((string) ($adminAuth['employer_name'] ?? '')) !== '' ? trim((string) ($adminAuth['employer_name'] ?? '')) : 'Unknown User'),
+            'ip_address' => trim((string) $request->ip()) !== '' ? trim((string) $request->ip()) : '-',
+            'longitude' => (string) ($coordinates['longitude'] ?? '-'),
+            'latitude' => (string) ($coordinates['latitude'] ?? '-'),
+            'action' => $this->resolveActivityActionLabel($request),
+            'datetime' => now()->toDateTimeString(),
+            'detail' => $this->resolveActivityDetail($request, $statusCode),
+            'actor' => [
+                'userid' => (int) ($adminAuth['userid'] ?? 0),
+                'levelname' => (string) ($adminAuth['levelname'] ?? ''),
+            ],
+        ]);
+
+        $this->saveActivityLogEntries($entries);
+    }
+
+    private function servicePackages(): array
+    {
+        return [
+            'Basic Session' => [
+                'name' => 'Basic Session',
+                'duration' => '60 minutes',
+                'price' => 'IDR 850,000',
+                'description' => 'Essential personal color consultation for a clean and confident daily look.',
+                'includes' => [
+                    '4 Seasons Color',
+                    'Hair Color',
+                    'Accessories',
+                    'Makeup Consultation',
+                ],
+            ],
+            'Exclusive Session' => [
+                'name' => 'Exclusive Session',
+                'duration' => '90 minutes',
+                'price' => 'IDR 1,200,000',
+                'description' => 'Expanded analysis for better outfit strategy and silhouette alignment.',
+                'includes' => [
+                    'All Basic +',
+                    'Silhouette Analysis',
+                    'Style Guidance',
+                ],
+            ],
+            'Luxe Session' => [
+                'name' => 'Luxe Session',
+                'duration' => '120 minutes',
+                'price' => 'IDR 2,200,000',
+                'description' => 'Complete premium service for polished image planning and high-touch guidance.',
+                'includes' => [
+                    'All Exclusive +',
+                    'Bridal Harmony / Shopping Guide',
+                ],
+            ],
+        ];
+    }
+
+    private function sidebarServices(): array
+    {
+        $services = DB::connection('mysql')
+            ->table('neoura.service')
+            ->select('serviceid', 'name')
+            ->orderBy('serviceid')
+            ->get();
+
+        if ($services->isEmpty()) {
+            return [];
+        }
+
+        $descriptionRows = DB::connection('mysql')
+            ->table('neoura.description')
+            ->select('serviceid', 'name')
+            ->orderBy('descriptionid')
+            ->get()
+            ->groupBy('serviceid');
+
+        return $services->map(function ($service) use ($descriptionRows) {
+            $descriptions = $descriptionRows
+                ->get($service->serviceid, collect())
+                ->pluck('name')
+                ->map(fn($value) => trim((string) $value))
+                ->filter()
+                ->values()
+                ->all();
+
+            return [
+                'serviceid' => (int) $service->serviceid,
+                'name' => trim((string) $service->name),
+                'descriptions' => $descriptions,
+            ];
+        })->all();
+    }
+
+    private function servicePageRows(): array
+    {
+        $services = DB::connection('mysql')
+            ->table('neoura.service')
+            ->select('serviceid', 'name', 'detail', 'duration', 'price')
+            ->orderBy('serviceid')
+            ->get();
+
+        if ($services->isEmpty()) {
+            return [];
+        }
+
+        $descriptionRows = DB::connection('mysql')
+            ->table('neoura.description')
+            ->select('serviceid', 'name')
+            ->orderBy('descriptionid')
+            ->get()
+            ->groupBy('serviceid');
+
+        return $services->map(function ($service) use ($descriptionRows) {
+            $descriptions = $descriptionRows
+                ->get($service->serviceid, collect())
+                ->pluck('name')
+                ->map(fn($value) => trim((string) $value))
+                ->filter()
+                ->values()
+                ->all();
+
+            return [
+                'serviceid' => (int) $service->serviceid,
+                'name' => trim((string) $service->name),
+                'detail' => trim((string) ($service->detail ?? '')),
+                'duration' => trim((string) $service->duration),
+                'price' => trim((string) $service->price),
+                'descriptions' => $descriptions,
+            ];
+        })->all();
+    }
+
+    private function serviceRecycleBinFile(): string
+    {
+        return storage_path('app/service-recycle-bin.json');
+    }
+
+    private function serviceRecycleBinEntries(): array
+    {
+        $file = $this->serviceRecycleBinFile();
+        if (!is_file($file)) {
+            return [];
+        }
+
+        $raw = file_get_contents($file);
+        $decoded = json_decode((string) $raw, true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        return collect($decoded)
+            ->filter(fn($entry) => is_array($entry))
+            ->values()
+            ->all();
+    }
+
+    private function saveServiceRecycleBinEntries(array $entries): void
+    {
+        $normalized = array_values(
+            collect($entries)
+                ->filter(fn($entry) => is_array($entry))
+                ->take(500)
+                ->all()
+        );
+
+        file_put_contents(
+            $this->serviceRecycleBinFile(),
+            json_encode($normalized, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+        );
+    }
+
+    private function serviceSnapshotById(int $serviceId): ?array
+    {
+        if ($serviceId <= 0) {
+            return null;
+        }
+
+        $service = DB::connection('mysql')
+            ->table('neoura.service')
+            ->select('serviceid', 'name', 'detail', 'duration', 'price')
+            ->where('serviceid', $serviceId)
+            ->first();
+
+        if (!$service) {
+            return null;
+        }
+
+        $descriptions = DB::connection('mysql')
+            ->table('neoura.description')
+            ->select('name')
+            ->where('serviceid', $serviceId)
+            ->orderBy('descriptionid')
+            ->get()
+            ->map(fn($row) => trim((string) ($row->name ?? '')))
+            ->filter()
+            ->values()
+            ->all();
+
+        return [
+            'serviceid' => (int) ($service->serviceid ?? 0),
+            'name' => trim((string) ($service->name ?? '')),
+            'detail' => trim((string) ($service->detail ?? '')),
+            'duration' => trim((string) ($service->duration ?? '')),
+            'price' => trim((string) ($service->price ?? '')),
+            'descriptions' => $descriptions,
+        ];
+    }
+
+    private function normalizeServiceSnapshotFromInput(int $serviceId, array $validated, array $descriptions): array
+    {
+        return [
+            'serviceid' => $serviceId,
+            'name' => trim((string) ($validated['name'] ?? '')),
+            'detail' => trim((string) ($validated['detail'] ?? '')),
+            'duration' => trim((string) ($validated['duration'] ?? '')),
+            'price' => trim((string) ($validated['price'] ?? '')),
+            'descriptions' => collect($descriptions)
+                ->map(fn($value) => trim((string) $value))
+                ->filter()
+                ->values()
+                ->all(),
+        ];
+    }
+
+    private function serviceRecycleChangesForUpdate(array $before, array $after): array
+    {
+        $changes = [];
+        foreach (['name', 'detail', 'duration', 'price'] as $field) {
+            $from = (string) ($before[$field] ?? '');
+            $to = (string) ($after[$field] ?? '');
+            if ($from === $to) {
+                continue;
+            }
+
+            $changes[] = [
+                'field' => $field,
+                'from' => $from,
+                'to' => $to,
+                'type' => 'updated',
+            ];
+        }
+
+        $beforeDescriptions = collect($before['descriptions'] ?? [])
+            ->map(fn($value) => trim((string) $value))
+            ->filter()
+            ->values()
+            ->all();
+        $afterDescriptions = collect($after['descriptions'] ?? [])
+            ->map(fn($value) => trim((string) $value))
+            ->filter()
+            ->values()
+            ->all();
+
+        if (implode("\n", $beforeDescriptions) !== implode("\n", $afterDescriptions)) {
+            $changes[] = [
+                'field' => 'descriptions',
+                'from' => implode("\n", $beforeDescriptions),
+                'to' => implode("\n", $afterDescriptions),
+                'type' => 'updated',
+            ];
+        }
+
+        return $changes;
+    }
+
+    private function serviceRecycleChangesForDelete(array $before): array
+    {
+        $changes = [];
+        foreach (['name', 'detail', 'duration', 'price'] as $field) {
+            $value = (string) ($before[$field] ?? '');
+            if ($value === '') {
+                continue;
+            }
+
+            $changes[] = [
+                'field' => $field,
+                'from' => $value,
+                'to' => '',
+                'type' => 'deleted',
+            ];
+        }
+
+        $descriptions = collect($before['descriptions'] ?? [])
+            ->map(fn($value) => trim((string) $value))
+            ->filter()
+            ->values()
+            ->all();
+        if (!empty($descriptions)) {
+            $changes[] = [
+                'field' => 'descriptions',
+                'from' => implode("\n", $descriptions),
+                'to' => '',
+                'type' => 'deleted',
+            ];
+        }
+
+        return $changes;
+    }
+
+    private function serviceActivityDetailFromChanges(array $changes): string
+    {
+        $parts = [];
+        foreach ($changes as $change) {
+            if (!is_array($change)) {
+                continue;
+            }
+
+            $field = trim((string) ($change['field'] ?? ''));
+            $from = trim((string) ($change['from'] ?? ''));
+            $to = trim((string) ($change['to'] ?? ''));
+            if ($field === '') {
+                continue;
+            }
+
+            $fromText = $from !== '' ? $from : '(empty)';
+            $toText = $to !== '' ? $to : '(empty)';
+            $parts[] = "{$field} from {$fromText} to {$toText}";
+        }
+
+        if (empty($parts)) {
+            return 'No field changes detected.';
+        }
+
+        return implode('; ', $parts);
+    }
+
+    private function archiveServiceRecycleEntry(
+        string $action,
+        int $serviceId,
+        ?array $adminAuth,
+        string $ipAddress = '',
+        ?array $nextSnapshot = null
+    ): void
+    {
+        $snapshot = $this->serviceSnapshotById($serviceId);
+        if (!$snapshot) {
+            return;
+        }
+
+        $normalizedAction = strtolower(trim($action)) === 'delete' ? 'delete' : 'update';
+        $changes = $normalizedAction === 'delete'
+            ? $this->serviceRecycleChangesForDelete($snapshot)
+            : $this->serviceRecycleChangesForUpdate($snapshot, is_array($nextSnapshot) ? $nextSnapshot : []);
+
+        $detailText = $normalizedAction === 'delete'
+            ? 'Service deleted.'
+            : (empty($changes) ? 'Service edit submitted (no field changes detected).' : 'Service edited.');
+
+        $entry = [
+            'recycle_id' => (string) Str::uuid(),
+            'action' => $normalizedAction,
+            'archived_at' => now()->toDateTimeString(),
+            'ip_address' => trim($ipAddress) !== '' ? trim($ipAddress) : '-',
+            'actor' => [
+                'userid' => (int) ($adminAuth['userid'] ?? 0),
+                'username' => (string) ($adminAuth['username'] ?? ''),
+                'levelname' => (string) ($adminAuth['levelname'] ?? ''),
+            ],
+            'detail_text' => $detailText,
+            'changes' => $changes,
+            'service' => $snapshot,
+        ];
+
+        $entries = $this->serviceRecycleBinEntries();
+        array_unshift($entries, $entry);
+        $this->saveServiceRecycleBinEntries($entries);
+    }
+
+    private function restoreServiceFromSnapshot(array $snapshot): int
+    {
+        $snapshotServiceId = (int) ($snapshot['serviceid'] ?? 0);
+        $targetService = $snapshotServiceId > 0
+            ? DB::connection('mysql')->table('neoura.service')->select('serviceid')->where('serviceid', $snapshotServiceId)->first()
+            : null;
+
+        $servicePayload = [
+            'name' => trim((string) ($snapshot['name'] ?? '')),
+            'detail' => trim((string) ($snapshot['detail'] ?? '')),
+            'duration' => trim((string) ($snapshot['duration'] ?? '')),
+            'price' => trim((string) ($snapshot['price'] ?? '')),
+        ];
+
+        foreach (['name', 'detail', 'duration', 'price'] as $requiredField) {
+            if (trim((string) ($servicePayload[$requiredField] ?? '')) === '') {
+                throw new \RuntimeException('Snapshot service data is incomplete.');
+            }
+        }
+
+        if ($targetService) {
+            $restoreServiceId = (int) ($targetService->serviceid ?? 0);
+            DB::connection('mysql')
+                ->table('neoura.service')
+                ->where('serviceid', $restoreServiceId)
+                ->update($servicePayload);
+        } else {
+            $restoreServiceId = (int) DB::connection('mysql')
+                ->table('neoura.service')
+                ->insertGetId($servicePayload);
+        }
+
+        $descriptions = collect($snapshot['descriptions'] ?? [])
+            ->map(fn($value) => trim((string) $value))
+            ->filter()
+            ->values();
+
+        DB::connection('mysql')
+            ->table('neoura.description')
+            ->where('serviceid', $restoreServiceId)
+            ->delete();
+
+        if ($descriptions->isNotEmpty()) {
+            DB::connection('mysql')
+                ->table('neoura.description')
+                ->insert(
+                    $descriptions
+                        ->map(fn($description) => [
+                            'name' => $description,
+                            'serviceid' => $restoreServiceId,
+                        ])
+                        ->all()
+                );
+        }
+
+        return $restoreServiceId;
+    }
+
+    private function bookingPackagesFromDatabase(): array
+    {
+        $rows = $this->servicePageRows();
+        if (empty($rows)) {
+            return $this->servicePackages();
+        }
+
+        $packages = [];
+        foreach ($rows as $row) {
+            $name = (string) ($row['name'] ?? '');
+            if ($name === '') {
+                continue;
+            }
+
+            $descriptions = $row['descriptions'] ?? [];
+            $packages[$name] = [
+                'serviceid' => (int) ($row['serviceid'] ?? 0),
+                'name' => $name,
+                'duration' => (string) ($row['duration'] ?? ''),
+                'price' => (string) ($row['price'] ?? ''),
+                'description' => (string) ($row['detail'] ?? (!empty($descriptions) ? (string) $descriptions[0] : 'Service details are available in the description list.')),
+                'includes' => array_values($descriptions),
+            ];
+        }
+
+        return !empty($packages) ? $packages : $this->servicePackages();
+    }
+
+    private function resolveServiceId(array $bookingPackage): int
+    {
+        $fromPayload = (int) ($bookingPackage['serviceid'] ?? 0);
+        if ($fromPayload > 0) {
+            return $fromPayload;
+        }
+
+        $name = trim((string) ($bookingPackage['name'] ?? ''));
+        if ($name === '') {
+            return 0;
+        }
+
+        $service = DB::connection('mysql')
+            ->table('neoura.service')
+            ->select('serviceid')
+            ->where('name', $name)
+            ->first();
+
+        return (int) ($service->serviceid ?? 0);
+    }
+
+    private function bookedSlots(): array
+    {
+        return DB::connection('mysql')
+            ->table('neoura.timeslot')
+            ->select('date', 'start_time', 'end_time')
+            ->where('is_booked', 1)
+            ->orderBy('date')
+            ->orderBy('start_time')
+            ->get()
+            ->map(function ($row) {
+                $start = substr((string) ($row->start_time ?? ''), 0, 5);
+                $end = substr((string) ($row->end_time ?? ''), 0, 5);
+
+                return [
+                    'booking_date' => (string) ($row->date ?? ''),
+                    'start_time' => $start,
+                    'end_time' => $end,
+                ];
+            })
+            ->all();
+    }
+
+    private function serviceDurationMinutes(string $durationLabel): int
+    {
+        if (preg_match('/(\d+)/', $durationLabel, $match) === 1) {
+            $value = (int) ($match[1] ?? 0);
+            if ($value > 0) {
+                $lower = strtolower($durationLabel);
+                if (str_contains($lower, 'hour') || str_contains($lower, 'jam') || str_contains($lower, 'hr')) {
+                    return $value * 60;
+                }
+
+                return $value;
+            }
+        }
+
+        return 60;
+    }
+
+    private function toMinutes(string $hhmm): int
+    {
+        if (preg_match('/^([01]\d|2[0-3]):([0-5]\d)$/', $hhmm, $match) !== 1) {
+            return -1;
+        }
+
+        return ((int) $match[1] * 60) + (int) $match[2];
+    }
+
+    private function toHm(int $minutes): string
+    {
+        $hours = intdiv($minutes, 60);
+        $mins = $minutes % 60;
+        return sprintf('%02d:%02d', $hours, $mins);
+    }
+
+    private function toSlotLabel(string $hhmm): string
+    {
+        $minutes = $this->toMinutes($hhmm);
+        if ($minutes < 0) {
+            return $hhmm;
+        }
+
+        $hours24 = intdiv($minutes, 60);
+        $mins = $minutes % 60;
+        $ampm = $hours24 >= 12 ? 'PM' : 'AM';
+        $hours12 = $hours24 % 12;
+        if ($hours12 === 0) {
+            $hours12 = 12;
+        }
+
+        return sprintf('%02d:%02d %s', $hours12, $mins, $ampm);
+    }
+
+    private function isOverlap(int $startA, int $endA, int $startB, int $endB): bool
+    {
+        return $startA < $endB && $startB < $endA;
+    }
+
+    private function timeOptions(string $open = '10:00', string $close = '22:00', int $stepMinutes = 30): array
+    {
+        $openMinutes = $this->toMinutes($open);
+        $closeMinutes = $this->toMinutes($close);
+        if ($openMinutes < 0 || $closeMinutes <= $openMinutes) {
+            return [];
+        }
+
+        $options = [];
+        for ($slot = $openMinutes; $slot < $closeMinutes; $slot += $stepMinutes) {
+            $value = $this->toHm($slot);
+            $options[] = [
+                'value' => $value,
+                'label' => $this->toSlotLabel($value),
+            ];
+        }
+
+        return $options;
+    }
+
+    private function generateBookingCode(): string
+    {
+        do {
+            $code = 'NRA-' . strtoupper(Str::random(3)) . random_int(100, 999);
+            $exists = DB::connection('mysql')
+                ->table('neoura.booking')
+                ->where('bookingcode', $code)
+                ->exists();
+        } while ($exists);
+
+        return $code;
+    }
+
+    private function normalizeWhatsAppNumber(string $phone): string
+    {
+        $raw = trim($phone);
+        $digits = preg_replace('/\D+/', '', $raw) ?? '';
+        if ($raw === '' || $digits === '') {
+            return '';
+        }
+
+        if (Str::startsWith($raw, '+')) {
+            return $digits;
+        }
+
+        if (Str::startsWith($digits, '00')) {
+            return ltrim(substr($digits, 2), '0');
+        }
+
+        if (Str::startsWith($digits, '0')) {
+            $fallbackCountryCode = trim((string) env('FONNTE_DEFAULT_COUNTRY_CODE', '62'));
+            $localPart = ltrim($digits, '0');
+            return $fallbackCountryCode . $localPart;
+        }
+
+        return $digits;
+    }
+
+    private function whatsappMessageText(string $customerName, string $serviceName, string $bookingCode, string $bookingDate, string $startTime, string $endTime, string $studioName = 'Neora Color Studio'): string
+    {
+        $studio = trim($studioName) !== '' ? trim($studioName) : 'Neora Color Studio';
+
+        return implode("\n", [
+            "Dear {$customerName},",
+            "",
+            "Thank you for booking with *{$studio}*.",
+            "",
+            "*Your Booking Details:*",
+            "- Booking Code: *{$bookingCode}*",
+            "- Service: {$serviceName}",
+            "- Date: {$bookingDate}",
+            "- Time: {$startTime} - {$endTime}",
+            "- Status: Pending Payment Validation",
+            "",
+            "Please keep your booking code for booking status verification.",
+            "",
+            "Best regards,",
+            $studio,
+        ]);
+    }
+
+    private function bookingEmailSubject(string $bookingCode): string
+    {
+        return "Booking Confirmation - {$bookingCode}";
+    }
+
+    private function bookingEmailText(string $customerName, string $serviceName, string $bookingCode, string $bookingDate, string $startTime, string $endTime, string $studioName = 'Neora Color Studio'): string
+    {
+        $studio = trim($studioName) !== '' ? trim($studioName) : 'Neora Color Studio';
+
+        return implode("\n", [
+            "Dear {$customerName},",
+            "",
+            "Thank you for booking with {$studio}.",
+            "",
+            "Your booking details:",
+            "Booking Code: {$bookingCode}",
+            "Service: {$serviceName}",
+            "Date: {$bookingDate}",
+            "Time: {$startTime} - {$endTime}",
+            "Status: Pending Payment Validation",
+            "",
+            "Please keep your booking code for booking status verification.",
+            "",
+            "Best regards,",
+            $studio,
+        ]);
+    }
+
+    private function sendBookingEmail(string $email, string $subject, string $message): array
+    {
+        $target = trim($email);
+        if ($target === '') {
+            return [
+                'sent' => false,
+                'reason' => 'Email address is empty.',
+            ];
+        }
+
+        $maxAttempts = 2;
+        $lastError = '';
+
+        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+            try {
+                Mail::raw($message, function ($mail) use ($target, $subject) {
+                    $mail->to($target)->subject($subject);
+                });
+
+                return [
+                    'sent' => true,
+                    'reason' => '',
+                ];
+            } catch (\Throwable $error) {
+                $lastError = $error->getMessage();
+                Log::warning('Booking email send failed', [
+                    'attempt' => $attempt,
+                    'target' => $target,
+                    'message' => $lastError,
+                ]);
+
+                if ($attempt < $maxAttempts) {
+                    usleep(300000);
+                }
+            }
+        }
+
+        Log::error('Booking email send exception', [
+            'message' => $lastError,
+            'target' => $target,
+        ]);
+
+        return [
+            'sent' => false,
+            'reason' => $lastError !== '' ? $lastError : 'Failed to send booking email.',
+        ];
+    }
+
+    private function accountEmailChangeRequestsFile(): string
+    {
+        return storage_path('app/account-email-change-requests.json');
+    }
+
+    private function accountEmailChangeRequests(): array
+    {
+        $file = $this->accountEmailChangeRequestsFile();
+        if (!is_file($file)) {
+            return [];
+        }
+
+        $raw = file_get_contents($file);
+        $decoded = json_decode((string) $raw, true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        return collect($decoded)
+            ->filter(fn($row) => is_array($row))
+            ->values()
+            ->all();
+    }
+
+    private function saveAccountEmailChangeRequests(array $rows): void
+    {
+        $normalized = array_values(
+            collect($rows)
+                ->filter(fn($row) => is_array($row))
+                ->take(500)
+                ->all()
+        );
+
+        file_put_contents(
+            $this->accountEmailChangeRequestsFile(),
+            json_encode($normalized, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+        );
+    }
+
+    private function pruneAccountEmailChangeRequests(array $rows): array
+    {
+        $nowTs = time();
+        return array_values(array_filter($rows, function ($row) use ($nowTs) {
+            if (!is_array($row)) {
+                return false;
+            }
+
+            return (int) ($row['expires_at_ts'] ?? 0) >= $nowTs;
+        }));
+    }
+
+    private function queueAccountEmailChangeVerification(int $userId, string $nextEmail): array
+    {
+        $email = trim($nextEmail);
+        if ($userId <= 0 || $email === '') {
+            return [
+                'sent' => false,
+                'reason' => 'Invalid email change request.',
+            ];
+        }
+
+        $token = (string) Str::random(64);
+        $requestedAt = now();
+        $expiresAt = $requestedAt->copy()->addHours(24);
+        $verifyLink = route('account.email_change.verify', ['token' => $token]);
+        $appName = trim((string) config('app.name', 'Neora Color Studio')) ?: 'Neora Color Studio';
+
+        $message = implode("\n", [
+            "Hello,",
+            "",
+            "We received a request to change the email address for your {$appName} account.",
+            "",
+            "Requested new email: {$email}",
+            "Requested at: " . $requestedAt->format('d M Y H:i:s T'),
+            "Link expires at: " . $expiresAt->format('d M Y H:i:s T'),
+            "",
+            "To confirm this change, open the secure link below:",
+            $verifyLink,
+            "",
+            "If you did not request this change, you can safely ignore this email. Your current email will remain unchanged.",
+            "",
+            "For security reasons, please do not share this message or link.",
+            "",
+            "Regards,",
+            "{$appName} Support Team",
+        ]);
+
+        $mailResult = $this->sendBookingEmail($email, 'Email Change Verification', $message);
+        if (!(bool) ($mailResult['sent'] ?? false)) {
+            return $mailResult;
+        }
+
+        $rows = $this->pruneAccountEmailChangeRequests($this->accountEmailChangeRequests());
+
+        // Keep one active token per user and per destination email.
+        $rows = array_values(array_filter($rows, function ($row) use ($userId, $email) {
+            if (!is_array($row)) {
+                return false;
+            }
+
+            $sameUser = (int) ($row['userid'] ?? 0) === $userId;
+            $sameEmail = strtolower(trim((string) ($row['next_email'] ?? ''))) === strtolower($email);
+            return !$sameUser && !$sameEmail;
+        }));
+
+        array_unshift($rows, [
+            'token' => $token,
+            'userid' => $userId,
+            'next_email' => $email,
+            'created_at' => now()->toDateTimeString(),
+            'expires_at' => $expiresAt->toDateTimeString(),
+            'expires_at_ts' => $expiresAt->timestamp,
+        ]);
+
+        $this->saveAccountEmailChangeRequests($rows);
+
+        return [
+            'sent' => true,
+            'reason' => '',
+        ];
+    }
+
+    private function phoneOtpMessageText(string $otp): string
+    {
+        return implode("\n", [
+            "Neora Color Studio - Phone Verification",
+            "",
+            "Your OTP code is: *{$otp}*",
+            "This code is valid for 5 minutes.",
+            "",
+            "Do not share this code with anyone.",
+        ]);
+    }
+
+    private function sendWhatsAppMessage(string $phoneNumber, string $message): array
+    {
+        $token = trim((string) env('FONNTE_TOKEN', ''));
+        if ($token === '') {
+            return [
+                'sent' => false,
+                'reason' => 'FONNTE_TOKEN is empty.',
+            ];
+        }
+
+        $target = $this->normalizeWhatsAppNumber($phoneNumber);
+        if ($target === '') {
+            return [
+                'sent' => false,
+                'reason' => 'Phone number is invalid.',
+            ];
+        }
+
+        try {
+            $response = Http::asForm()
+                ->timeout(15)
+                ->retry(2, 300)
+                ->withHeaders(['Authorization' => $token])
+                ->post('https://api.fonnte.com/send', [
+                    'target' => $target,
+                    'message' => $message,
+                    'countryCode' => '0',
+                    'typing' => 'true',
+                    'connectOnly' => 'false',
+                ]);
+
+            $body = $response->json();
+            $status = is_array($body) ? (bool) ($body['status'] ?? false) : false;
+            if (!$response->successful() || !$status) {
+                Log::warning('Fonnte send failed', [
+                    'http_status' => $response->status(),
+                    'response_body' => $response->body(),
+                    'target' => $target,
+                ]);
+
+                return [
+                    'sent' => false,
+                    'reason' => is_array($body) ? (string) ($body['reason'] ?? 'Fonnte response status false.') : 'Fonnte response invalid.',
+                    'http_status' => $response->status(),
+                ];
+            }
+
+            return [
+                'sent' => true,
+                'reason' => '',
+            ];
+        } catch (\Throwable $error) {
+            Log::error('Fonnte send exception', [
+                'message' => $error->getMessage(),
+            ]);
+
+            return [
+                'sent' => false,
+                'reason' => $error->getMessage(),
+            ];
+        }
+    }
+
+    private function defaultCarouselSlides(): array
+    {
+        return [
+            [
+                'title' => 'Testing Picture 01',
+                'description' => 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore.',
+                'image_path' => '',
+                'solid_class' => 'slide-solid-1',
+            ],
+            [
+                'title' => 'Testing Picture 02',
+                'description' => 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Ut enim ad minim veniam, quis nostrud exercitation.',
+                'image_path' => '',
+                'solid_class' => 'slide-solid-2',
+            ],
+            [
+                'title' => 'Testing Picture 03',
+                'description' => 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis aute irure dolor in reprehenderit in voluptate.',
+                'image_path' => '',
+                'solid_class' => 'slide-solid-3',
+            ],
+        ];
+    }
+
+    private function defaultAboutContent(): array
+    {
+        return [
+            'title' => 'Professional personal color consultancy in a calm, minimal setting.',
+            'description' => 'We focus on accurate analysis, practical recommendations, and a premium consultation experience. Every session is structured so you can confidently choose colors for clothing, makeup, and accessories.',
+        ];
+    }
+
+    private function aboutContent(): array
+    {
+        $defaults = $this->defaultAboutContent();
+        $file = storage_path('app/about-content.json');
+
+        if (!is_file($file)) {
+            return $defaults;
+        }
+
+        $raw = file_get_contents($file);
+        $decoded = json_decode((string) $raw, true);
+        if (!is_array($decoded)) {
+            return $defaults;
+        }
+
+        $title = trim((string) ($decoded['title'] ?? ''));
+        $description = trim((string) ($decoded['description'] ?? ''));
+
+        return [
+            'title' => $title !== '' ? $title : $defaults['title'],
+            'description' => $description !== '' ? $description : $defaults['description'],
+        ];
+    }
+
+    private function saveAboutContent(array $about): void
+    {
+        $payload = [
+            'title' => trim((string) ($about['title'] ?? '')),
+            'description' => trim((string) ($about['description'] ?? '')),
+        ];
+
+        $file = storage_path('app/about-content.json');
+        file_put_contents($file, json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+    }
+
+    private function decorateCarouselSlides(array $slides): array
+    {
+        $palette = ['slide-solid-1', 'slide-solid-2', 'slide-solid-3'];
+
+        $normalized = [];
+        foreach (array_values($slides) as $index => $slide) {
+            $path = trim((string) ($slide['image_path'] ?? ''));
+            $title = trim((string) ($slide['title'] ?? ''));
+            $description = trim((string) ($slide['description'] ?? ''));
+
+            $normalized[] = [
+                'title' => $title !== '' ? $title : 'Slide ' . ($index + 1),
+                'description' => $description !== '' ? $description : '',
+                'image_path' => $path,
+                'image_url' => $path !== '' ? asset(ltrim($path, '/')) : '',
+                'solid_class' => $palette[$index % count($palette)],
+            ];
+        }
+
+        return $normalized;
+    }
+
+    private function carouselSlides(): array
+    {
+        $file = storage_path('app/carousel-slides.json');
+        $defaults = $this->decorateCarouselSlides($this->defaultCarouselSlides());
+
+        if (!is_file($file)) {
+            return $defaults;
+        }
+
+        $raw = file_get_contents($file);
+        $decoded = json_decode((string) $raw, true);
+
+        if (!is_array($decoded) || count($decoded) < 1) {
+            return $defaults;
+        }
+
+        return $this->decorateCarouselSlides($decoded);
+    }
+
+    private function saveCarouselSlides(array $slides): void
+    {
+        $payload = array_map(function (array $slide) {
+            return [
+                'title' => (string) ($slide['title'] ?? ''),
+                'description' => (string) ($slide['description'] ?? ''),
+                'image_path' => (string) ($slide['image_path'] ?? ''),
+            ];
+        }, $slides);
+
+        $file = storage_path('app/carousel-slides.json');
+        file_put_contents($file, json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+    }
+
+    private function defaultCarouselAutoplayMs(): int
+    {
+        return 5000;
+    }
+
+    private function normalizeCarouselAutoplayMs($value): int
+    {
+        $number = (int) $value;
+        if ($number < 500) {
+            return 500;
+        }
+        if ($number > 60000) {
+            return 60000;
+        }
+
+        return $number;
+    }
+
+    private function carouselSettings(): array
+    {
+        $fallbackMs = $this->defaultCarouselAutoplayMs();
+        $file = storage_path('app/carousel-settings.json');
+        if (!is_file($file)) {
+            return [
+                'autoplay_ms' => $fallbackMs,
+            ];
+        }
+
+        $raw = file_get_contents($file);
+        $decoded = json_decode((string) $raw, true);
+        if (!is_array($decoded)) {
+            return [
+                'autoplay_ms' => $fallbackMs,
+            ];
+        }
+
+        return [
+            'autoplay_ms' => $this->normalizeCarouselAutoplayMs($decoded['autoplay_ms'] ?? $fallbackMs),
+        ];
+    }
+
+    private function saveCarouselSettings(array $settings): void
+    {
+        $payload = [
+            'autoplay_ms' => $this->normalizeCarouselAutoplayMs($settings['autoplay_ms'] ?? $this->defaultCarouselAutoplayMs()),
+        ];
+
+        $file = storage_path('app/carousel-settings.json');
+        file_put_contents($file, json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+    }
+
+    private function defaultBrandNameVisible(): bool
+    {
+        return true;
+    }
+
+    private function normalizeBrandNameVisible($value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        $text = strtolower(trim((string) $value));
+        if ($text === '') {
+            return $this->defaultBrandNameVisible();
+        }
+
+        if (in_array($text, ['1', 'true', 'yes', 'show', 'visible'], true)) {
+            return true;
+        }
+
+        if (in_array($text, ['0', 'false', 'no', 'hide', 'hidden'], true)) {
+            return false;
+        }
+
+        return $this->defaultBrandNameVisible();
+    }
+
+    private function brandDisplaySettings(): array
+    {
+        $fallback = $this->defaultBrandNameVisible();
+        $file = storage_path('app/brand-display-settings.json');
+        if (!is_file($file)) {
+            return [
+                'show_name_in_brand' => $fallback,
+            ];
+        }
+
+        $raw = file_get_contents($file);
+        $decoded = json_decode((string) $raw, true);
+        if (!is_array($decoded)) {
+            return [
+                'show_name_in_brand' => $fallback,
+            ];
+        }
+
+        return [
+            'show_name_in_brand' => $this->normalizeBrandNameVisible($decoded['show_name_in_brand'] ?? $fallback),
+        ];
+    }
+
+    private function saveBrandDisplaySettings(array $settings): void
+    {
+        $payload = [
+            'show_name_in_brand' => $this->normalizeBrandNameVisible(
+                $settings['show_name_in_brand'] ?? $this->defaultBrandNameVisible()
+            ),
+        ];
+
+        $file = storage_path('app/brand-display-settings.json');
+        file_put_contents($file, json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+    }
+
+    private function sidebarPermissionFile(): string
+    {
+        return storage_path('app/sidebar-permissions.json');
+    }
+
+    private function sidebarPermissionMenuRows(): array
+    {
+        return [
+            [
+                'key' => 'service',
+                'label' => 'Service',
+                'description' => 'Access Service management page.',
+            ],
+            [
+                'key' => 'payment',
+                'label' => 'Payment Validation',
+                'description' => 'Access Payment Validation page.',
+            ],
+            [
+                'key' => 'user',
+                'label' => 'User Data',
+                'description' => 'Access User Data page.',
+            ],
+            [
+                'key' => 'activity',
+                'label' => 'Activity Log',
+                'description' => 'Show Activity Log menu item.',
+            ],
+            [
+                'key' => 'financial',
+                'label' => 'Financial Report',
+                'description' => 'Access Financial Report page.',
+            ],
+            [
+                'key' => 'recycle',
+                'label' => 'Recycle Bin',
+                'description' => 'Access Recycle Bin page.',
+            ],
+            [
+                'key' => 'permission',
+                'label' => 'Permission',
+                'description' => 'Access Sidebar Permission page.',
+            ],
+            [
+                'key' => 'setting',
+                'label' => 'Setting',
+                'description' => 'Access Website Setting page.',
+            ],
+        ];
+    }
+
+    private function sidebarPermissionMenuKeys(): array
+    {
+        return collect($this->sidebarPermissionMenuRows())
+            ->map(fn($row) => (string) ($row['key'] ?? ''))
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    private function defaultSidebarPermissions(): array
+    {
+        return [
+            'admin' => [
+                'service' => true,
+                'payment' => true,
+                'user' => true,
+                'activity' => true,
+                'financial' => true,
+                'recycle' => false,
+                'permission' => false,
+                'setting' => false,
+            ],
+            'manager' => [
+                'service' => true,
+                'payment' => true,
+                'user' => true,
+                'activity' => true,
+                'financial' => true,
+                'recycle' => false,
+                'permission' => false,
+                'setting' => false,
+            ],
+            'superadmin' => [
+                'service' => true,
+                'payment' => true,
+                'user' => true,
+                'activity' => true,
+                'financial' => true,
+                'recycle' => true,
+                'permission' => true,
+                'setting' => true,
+            ],
+        ];
+    }
+
+    private function normalizeSidebarPermissionValue(mixed $value, bool $fallback): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        $normalized = strtolower(trim((string) $value));
+        if (in_array($normalized, ['1', 'true', 'yes', 'on'], true)) {
+            return true;
+        }
+        if (in_array($normalized, ['0', 'false', 'no', 'off'], true)) {
+            return false;
+        }
+
+        return $fallback;
+    }
+
+    private function normalizeSidebarPermissions(array $settings): array
+    {
+        $defaults = $this->defaultSidebarPermissions();
+        $keys = $this->sidebarPermissionMenuKeys();
+        $normalized = [];
+
+        foreach (['admin', 'manager', 'superadmin'] as $level) {
+            $levelSettings = is_array($settings[$level] ?? null) ? $settings[$level] : [];
+            $levelDefaults = is_array($defaults[$level] ?? null) ? $defaults[$level] : [];
+            $levelResult = [];
+
+            foreach ($keys as $key) {
+                $fallback = (bool) ($levelDefaults[$key] ?? false);
+                $levelResult[$key] = $this->normalizeSidebarPermissionValue($levelSettings[$key] ?? $fallback, $fallback);
+            }
+
+            $normalized[$level] = $levelResult;
+        }
+
+        return $normalized;
+    }
+
+    private function sidebarPermissions(): array
+    {
+        $file = $this->sidebarPermissionFile();
+        if (!is_file($file)) {
+            return $this->defaultSidebarPermissions();
+        }
+
+        $raw = file_get_contents($file);
+        $decoded = json_decode((string) $raw, true);
+        if (!is_array($decoded)) {
+            return $this->defaultSidebarPermissions();
+        }
+
+        return $this->normalizeSidebarPermissions($decoded);
+    }
+
+    private function saveSidebarPermissions(array $settings): void
+    {
+        $normalized = $this->normalizeSidebarPermissions($settings);
+        file_put_contents(
+            $this->sidebarPermissionFile(),
+            json_encode($normalized, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+        );
+    }
+
+    private function sidebarPermissionMapForAuth(?array $adminAuth): array
+    {
+        $defaults = $this->defaultSidebarPermissions();
+        $keys = $this->sidebarPermissionMenuKeys();
+        $level = strtolower(trim((string) ($adminAuth['levelname'] ?? '')));
+        $settings = $this->sidebarPermissions();
+        $source = is_array($settings[$level] ?? null) ? $settings[$level] : ($defaults[$level] ?? $defaults['admin']);
+
+        $map = [];
+        foreach ($keys as $key) {
+            $map[$key] = (bool) ($source[$key] ?? false);
+        }
+
+        return $map;
+    }
+
+    private function canAccessSidebarMenu(?array $adminAuth, string $menuKey): bool
+    {
+        if (in_array($menuKey, ['home', 'account', 'logout'], true)) {
+            return true;
+        }
+
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return false;
+        }
+
+        $menu = strtolower(trim($menuKey));
+        if (!in_array($menu, $this->sidebarPermissionMenuKeys(), true)) {
+            return true;
+        }
+
+        $map = $this->sidebarPermissionMapForAuth($adminAuth);
+        return (bool) ($map[$menu] ?? false);
+    }
+
+    private function sidebarPermissionDenied(Request $request, string $message = 'You do not have access to this menu.')
+    {
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $message,
+            ], 403);
+        }
+
+        return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+    }
+
+    private function canSeeAdminMenu(?array $adminAuth): bool
+    {
+        if (empty($adminAuth['levelname'])) {
+            return false;
+        }
+
+        $level = strtolower(trim((string) $adminAuth['levelname']));
+        return in_array($level, ['admin', 'manager', 'superadmin'], true);
+    }
+
+    private function isSuperAdmin(?array $adminAuth): bool
+    {
+        if (empty($adminAuth['levelname'])) {
+            return false;
+        }
+
+        return strtolower(trim((string) $adminAuth['levelname'])) === 'superadmin';
+    }
+
+    private function resolveLogoUrl(?string $logoPath): string
+    {
+        $logoPath = trim((string) $logoPath);
+
+        if ($logoPath === '') {
+            return asset('images/neora-logo.svg');
+        }
+
+        if (Str::startsWith($logoPath, ['http://', 'https://'])) {
+            return $logoPath;
+        }
+
+        return asset(ltrim($logoPath, '/'));
+    }
+
+    private function defaultThemeSoftColor(): string
+    {
+        return '#F2D5C4';
+    }
+
+    private function defaultThemeBoldColor(): string
+    {
+        return '#C69278';
+    }
+
+    private function normalizeHexColor(?string $hex, string $fallback): string
+    {
+        $value = strtoupper(trim((string) $hex));
+        if (preg_match('/^#[0-9A-F]{6}$/', $value) === 1) {
+            return $value;
+        }
+
+        return strtoupper($fallback);
+    }
+
+    private function colorShift(string $hex, int $amount): string
+    {
+        $value = ltrim($this->normalizeHexColor($hex, $this->defaultThemeSoftColor()), '#');
+        $r = max(0, min(255, hexdec(substr($value, 0, 2)) + $amount));
+        $g = max(0, min(255, hexdec(substr($value, 2, 2)) + $amount));
+        $b = max(0, min(255, hexdec(substr($value, 4, 2)) + $amount));
+
+        return sprintf('#%02X%02X%02X', $r, $g, $b);
+    }
+
+    private function themeSettings(): array
+    {
+        $fallbackSoft = $this->defaultThemeSoftColor();
+        $fallbackBold = $this->defaultThemeBoldColor();
+        $system = DB::connection('mysql')
+            ->table('neoura.system')
+            ->orderBy('systemid')
+            ->first();
+
+        if (!$system) {
+            return [
+                'accent_soft' => $fallbackSoft,
+                'accent_bold' => $fallbackBold,
+            ];
+        }
+
+        $soft = $this->normalizeHexColor(
+            $system->color1 ?? null,
+            $fallbackSoft
+        );
+
+        $boldFallback = $this->colorShift($soft, -30);
+        $bold = $this->normalizeHexColor($system->color2 ?? null, $boldFallback);
+
+        return [
+            'accent_soft' => $soft,
+            'accent_bold' => $bold,
+        ];
+    }
+
+    private function websiteSettings(): array
+    {
+        $theme = $this->themeSettings();
+        $brandDisplay = $this->brandDisplaySettings();
+        $accentSoftColor = $theme['accent_soft'];
+        $accentBoldColor = $theme['accent_bold'];
+
+        $system = DB::connection('mysql')
+            ->table('neoura.system')
+            ->orderBy('systemid')
+            ->first();
+
+        if (!$system) {
+            return [
+                'systemid' => null,
+                'name' => 'Neora Color Studio',
+                'logo_path' => 'images/neora-logo.svg',
+                'logo_url' => asset('images/neora-logo.svg'),
+                'phone' => $this->defaultContact['phone'],
+                'instagram' => $this->defaultContact['instagram'],
+                'address' => $this->defaultContact['address'],
+                'maps' => $this->defaultContact['maps'],
+                'bank_name' => '',
+                'bank_number' => '',
+                'bank_accounts' => [],
+                'theme_color_soft' => $accentSoftColor,
+                'theme_color_bold' => $accentBoldColor,
+                'theme_color' => $accentSoftColor,
+                'theme_color_strong' => $accentBoldColor,
+                'show_name_in_brand' => (bool) ($brandDisplay['show_name_in_brand'] ?? $this->defaultBrandNameVisible()),
+            ];
+        }
+
+        $banks = DB::connection('mysql')
+            ->table('neoura.bank')
+            ->where('systemid', $system->systemid)
+            ->orderBy('bankid')
+            ->get();
+        $firstBank = $banks->first();
+
+        $address = (string) ($system->systemaddress ?? '');
+        $mapsQuery = trim($address) !== '' ? urlencode($address) : 'Kemang+Raya+18+Jakarta';
+
+        return [
+            'systemid' => $system->systemid,
+            'name' => (string) ($system->systemname ?? 'Neora Color Studio'),
+            'logo_path' => (string) ($system->systemlogo ?? 'images/neora-logo.svg'),
+            'logo_url' => $this->resolveLogoUrl($system->systemlogo ?? 'images/neora-logo.svg'),
+            'phone' => (string) ($system->systemcontact ?? $this->defaultContact['phone']),
+            'instagram' => (string) ($system->system_insta ?? $this->defaultContact['instagram']),
+            'address' => $address !== '' ? $address : $this->defaultContact['address'],
+            'maps' => 'https://maps.google.com/?q=' . $mapsQuery,
+            'bank_name' => (string) ($firstBank->bankname ?? ''),
+            'bank_number' => (string) ($firstBank->banknumber ?? ''),
+            'bank_accounts' => $banks->map(function ($bank) {
+                return [
+                    'bankname' => (string) ($bank->bankname ?? ''),
+                    'banknumber' => (string) ($bank->banknumber ?? ''),
+                ];
+            })->all(),
+            'theme_color_soft' => $accentSoftColor,
+            'theme_color_bold' => $accentBoldColor,
+            'theme_color' => $accentSoftColor,
+            'theme_color_strong' => $accentBoldColor,
+            'show_name_in_brand' => (bool) ($brandDisplay['show_name_in_brand'] ?? $this->defaultBrandNameVisible()),
+        ];
+    }
+
+    public function home(Request $request)
+    {
+        $homeServices = $this->servicePageRows();
+        $adminAuth = $request->session()->get('admin_auth');
+        $showAdminMenu = $this->canSeeAdminMenu($adminAuth);
+        $website = $this->websiteSettings();
+        $carouselSlides = $this->carouselSlides();
+        $carouselSettings = $this->carouselSettings();
+        $aboutContent = $this->aboutContent();
+        $sidebarServices = $this->sidebarServices();
+        $bookingLookupResult = $request->session()->get('booking_lookup_result');
+        $bookingLookupError = (string) $request->session()->get('booking_lookup_error', '');
+
+        $data = [
+            'title' => $website['name'] . ' | Personal Color Analysis',
+            'contact' => [
+                'phone' => $website['phone'],
+                'instagram' => $website['instagram'],
+                'address' => $website['address'],
+                'maps' => $website['maps'],
+            ],
+            'homeServices' => $homeServices,
+            'adminAuth' => $adminAuth,
+            'showAdminMenu' => $showAdminMenu,
+            'sidebarPermissionMap' => $this->sidebarPermissionMapForAuth($adminAuth),
+            'website' => $website,
+            'carouselSlides' => $carouselSlides,
+            'carouselAutoplayMs' => (int) ($carouselSettings['autoplay_ms'] ?? $this->defaultCarouselAutoplayMs()),
+            'aboutContent' => $aboutContent,
+            'sidebarServices' => $sidebarServices,
+            'bookingLookupResult' => is_array($bookingLookupResult) ? $bookingLookupResult : null,
+            'bookingLookupError' => $bookingLookupError,
+        ];
+
+        $this->renderParts([
+            'all.header',
+            'all.menu',
+            'all.home',
+            'all.footer',
+        ], $data);
+    }
+
+    public function basicSession()
+    {
+        $service = $this->servicePackages()['Basic Session'];
+        $service['bookingRoute'] = route('booking', ['plan' => 'Basic Session']);
+        $website = $this->websiteSettings();
+
+        $data = [
+            'title' => 'Basic Session | ' . $website['name'],
+            'contact' => [
+                'phone' => $website['phone'],
+                'instagram' => $website['instagram'],
+                'address' => $website['address'],
+                'maps' => $website['maps'],
+            ],
+            'service' => $service,
+            'website' => $website,
+        ];
+
+        $this->renderParts(['all.header', 'all.navbar', 'all.service-detail', 'all.footer'], $data);
+    }
+
+    public function exclusiveSession()
+    {
+        $service = $this->servicePackages()['Exclusive Session'];
+        $service['bookingRoute'] = route('booking', ['plan' => 'Exclusive Session']);
+        $website = $this->websiteSettings();
+
+        $data = [
+            'title' => 'Exclusive Session | ' . $website['name'],
+            'contact' => [
+                'phone' => $website['phone'],
+                'instagram' => $website['instagram'],
+                'address' => $website['address'],
+                'maps' => $website['maps'],
+            ],
+            'service' => $service,
+            'website' => $website,
+        ];
+
+        $this->renderParts(['all.header', 'all.navbar', 'all.service-detail', 'all.footer'], $data);
+    }
+
+    public function luxeSession()
+    {
+        $service = $this->servicePackages()['Luxe Session'];
+        $service['bookingRoute'] = route('booking', ['plan' => 'Luxe Session']);
+        $website = $this->websiteSettings();
+
+        $data = [
+            'title' => 'Luxe Session | ' . $website['name'],
+            'contact' => [
+                'phone' => $website['phone'],
+                'instagram' => $website['instagram'],
+                'address' => $website['address'],
+                'maps' => $website['maps'],
+            ],
+            'service' => $service,
+            'website' => $website,
+        ];
+
+        $this->renderParts(['all.header', 'all.navbar', 'all.service-detail', 'all.footer'], $data);
+    }
+
+    public function booking(Request $request)
+    {
+        $packages = $this->bookingPackagesFromDatabase();
+        $selectedPlan = $request->query('plan', 'Basic Session');
+        $bookingPackage = $packages[$selectedPlan] ?? reset($packages);
+        $selectedPlan = (string) ($bookingPackage['name'] ?? $selectedPlan);
+        $bookingDurationMinutes = $this->serviceDurationMinutes((string) ($bookingPackage['duration'] ?? '60'));
+        $bookingDate = (string) $request->query('date', now()->toDateString());
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $bookingDate) !== 1) {
+            $bookingDate = now()->toDateString();
+        }
+
+        $bookingRecords = $this->bookedSlots();
+        $website = $this->websiteSettings();
+
+        $data = [
+            'title' => 'Booking | ' . $website['name'],
+            'pageScript' => 'booking.js',
+            'contact' => [
+                'phone' => $website['phone'],
+                'instagram' => $website['instagram'],
+                'address' => $website['address'],
+                'maps' => $website['maps'],
+            ],
+            'selectedPlan' => $selectedPlan,
+            'bookingPackage' => $bookingPackage,
+            'bookingDate' => $bookingDate,
+            'bookingDurationMinutes' => $bookingDurationMinutes,
+            'bookingTimeOptions' => $this->timeOptions(),
+            'bookingSchedule' => [
+                'open' => '10:00',
+                'close' => '22:00',
+                'step' => 30,
+                'records' => array_map(function (array $booking) {
+                    return [
+                        'booking_date' => (string) ($booking['booking_date'] ?? ''),
+                        'start_time' => (string) ($booking['start_time'] ?? ''),
+                        'end_time' => (string) ($booking['end_time'] ?? ''),
+                    ];
+                }, $bookingRecords),
+            ],
+            'website' => $website,
+        ];
+
+        $this->renderParts(['all.header', 'all.navbar', 'all.booking', 'all.footer'], $data);
+    }
+
+    public function bookingSubmit(Request $request)
+    {
+        $packages = $this->bookingPackagesFromDatabase();
+        $selectedPlan = (string) $request->query('plan', '');
+        if ($selectedPlan === '' || !array_key_exists($selectedPlan, $packages)) {
+            return redirect()->route('booking')->withErrors(['booking' => 'Selected package is not available.']);
+        }
+
+        $bookingPackage = $packages[$selectedPlan];
+        $serviceId = $this->resolveServiceId($bookingPackage);
+        if ($serviceId <= 0) {
+            return back()->withErrors(['booking' => 'Service ID is invalid. Please contact admin.'])->withInput();
+        }
+
+        $durationMinutes = $this->serviceDurationMinutes((string) ($bookingPackage['duration'] ?? '60'));
+        $website = $this->websiteSettings();
+        $studioName = (string) ($website['name'] ?? 'Neora Color Studio');
+        $bookingCode = $this->generateBookingCode();
+
+        $validated = $request->validate([
+            'full_name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255'],
+            'phone' => ['required', 'regex:/^\+?[0-9\s-]{8,20}$/'],
+            'booking_date' => ['required', 'date_format:Y-m-d'],
+            'time_slot' => ['required', 'regex:/^([01]\d|2[0-3]):[0-5]\d$/'],
+            'payment_bank' => ['required', 'string', 'max:255'],
+            'payment_proof' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:4096'],
+        ]);
+
+        $openMinutes = $this->toMinutes('10:00');
+        $closeMinutes = $this->toMinutes('22:00');
+        $startMinutes = $this->toMinutes($validated['time_slot']);
+        $endMinutes = $startMinutes + $durationMinutes;
+        $todayDate = now()->toDateString();
+        $currentMinutes = ((int) now()->format('H') * 60) + (int) now()->format('i');
+
+        if ($validated['booking_date'] === $todayDate && $startMinutes < $currentMinutes) {
+            return back()
+                ->withErrors(['time_slot' => 'Selected time has passed. Please choose a future time slot.'])
+                ->withInput();
+        }
+
+        if ($startMinutes < $openMinutes || $endMinutes > $closeMinutes) {
+            return back()
+                ->withErrors(['time_slot' => 'Selected time is outside operational hours for this service duration.'])
+                ->withInput();
+        }
+
+        $existingSlots = DB::connection('mysql')
+            ->table('neoura.timeslot')
+            ->select('start_time', 'end_time')
+            ->where('date', $validated['booking_date'])
+            ->where('is_booked', 1)
+            ->get();
+
+        foreach ($existingSlots as $slot) {
+            $existingStart = $this->toMinutes(substr((string) ($slot->start_time ?? ''), 0, 5));
+            $existingEnd = $this->toMinutes(substr((string) ($slot->end_time ?? ''), 0, 5));
+            if ($existingStart < 0 || $existingEnd <= $existingStart) {
+                continue;
+            }
+
+            if ($this->isOverlap($startMinutes, $endMinutes, $existingStart, $existingEnd)) {
+                return back()
+                    ->withErrors(['time_slot' => 'This time slot is already full. Please choose another time.'])
+                    ->withInput();
+            }
+        }
+
+        $proofPath = '';
+        if ($request->hasFile('payment_proof')) {
+            $file = $request->file('payment_proof');
+            $directory = public_path('images/booking-proof');
+            if (!is_dir($directory)) {
+                mkdir($directory, 0755, true);
+            }
+
+            $filename = 'proof-' . time() . '-' . Str::random(8) . '.' . $file->getClientOriginalExtension();
+            $file->move($directory, $filename);
+            $proofPath = 'images/booking-proof/' . $filename;
+        }
+
+        DB::connection('mysql')->transaction(function () use (
+            $validated,
+            $serviceId,
+            $bookingCode,
+            $proofPath,
+            $endMinutes
+        ) {
+            $slotId = DB::connection('mysql')
+                ->table('neoura.timeslot')
+                ->insertGetId([
+                    'serviceid' => $serviceId,
+                    'date' => $validated['booking_date'],
+                    'start_time' => $validated['time_slot'] . ':00',
+                    'end_time' => $this->toHm($endMinutes) . ':00',
+                    'is_booked' => 1,
+                ]);
+
+            $bookingId = DB::connection('mysql')
+                ->table('neoura.booking')
+                ->insertGetId([
+                    'name' => $validated['full_name'],
+                    'email' => $validated['email'],
+                    'phonenumber' => $validated['phone'],
+                    'serviceid' => $serviceId,
+                    'slotid' => $slotId,
+                    'status' => 'Pending',
+                    'bookingcode' => $bookingCode,
+                ]);
+
+            DB::connection('mysql')
+                ->table('neoura.payment')
+                ->insert([
+                    'bookingid' => $bookingId,
+                    'paymentdate' => now()->toDateTimeString(),
+                    'bank' => $validated['payment_bank'],
+                    'proof' => $proofPath,
+                ]);
+        });
+
+        $startTime = $validated['time_slot'];
+        $endTime = $this->toHm($endMinutes);
+        $messageText = $this->whatsappMessageText(
+            $validated['full_name'],
+            $selectedPlan,
+            $bookingCode,
+            $validated['booking_date'],
+            $startTime,
+            $endTime,
+            $studioName
+        );
+        $whatsAppResult = $this->sendWhatsAppMessage($validated['phone'], $messageText);
+        $manualWhatsAppLink = 'https://wa.me/' . $this->normalizeWhatsAppNumber($validated['phone']) . '?text=' . rawurlencode($messageText);
+        $emailText = $this->bookingEmailText(
+            $validated['full_name'],
+            $selectedPlan,
+            $bookingCode,
+            $validated['booking_date'],
+            $startTime,
+            $endTime,
+            $studioName
+        );
+        $emailResult = $this->sendBookingEmail(
+            $validated['email'],
+            $this->bookingEmailSubject($bookingCode),
+            $emailText
+        );
+
+        return redirect()
+            ->route('booking', ['plan' => $selectedPlan, 'date' => $validated['booking_date']])
+            ->with('status', 'Booking submitted successfully. Your payment is pending validation.')
+            ->with('booking_code', $bookingCode)
+            ->with('whatsapp_sent', (bool) ($whatsAppResult['sent'] ?? false))
+            ->with('whatsapp_error', (string) ($whatsAppResult['reason'] ?? ''))
+            ->with('whatsapp_link', $manualWhatsAppLink)
+            ->with('email_sent', (bool) ($emailResult['sent'] ?? false))
+            ->with('email_error', (string) ($emailResult['reason'] ?? ''));
+    }
+
+    public function bookingStatusLookup(Request $request)
+    {
+        $validated = $request->validate([
+            'booking_code' => ['required', 'string', 'max:255'],
+            'phone_last4' => ['required', 'regex:/^\d{4}$/'],
+        ]);
+
+        $bookingCode = strtoupper(trim((string) $validated['booking_code']));
+        $phoneLast4 = (string) $validated['phone_last4'];
+
+        $row = DB::connection('mysql')
+            ->table('neoura.booking as b')
+            ->join('neoura.service as s', 's.serviceid', '=', 'b.serviceid')
+            ->join('neoura.timeslot as t', 't.slotid', '=', 'b.slotid')
+            ->select(
+                'b.bookingcode',
+                'b.name',
+                'b.phonenumber',
+                'b.status',
+                's.name as service_name',
+                't.date',
+                't.start_time',
+                't.end_time'
+            )
+            ->where('b.bookingcode', $bookingCode)
+            ->first();
+
+        if (!$row) {
+            return redirect()
+                ->to(route('home') . '#booking-status')
+                ->with('booking_lookup_error', 'Booking code not found.')
+                ->withInput();
+        }
+
+        $digits = preg_replace('/\D+/', '', (string) ($row->phonenumber ?? '')) ?? '';
+        $actualLast4 = substr($digits, -4);
+        if ($actualLast4 !== $phoneLast4) {
+            return redirect()
+                ->to(route('home') . '#booking-status')
+                ->with('booking_lookup_error', 'Last 4 digits of phone number are not valid.')
+                ->withInput();
+        }
+
+        return redirect()->to(route('home') . '#booking-status')
+            ->with('booking_lookup_result', [
+                'service_name' => (string) ($row->service_name ?? '-'),
+                'date' => (string) ($row->date ?? '-'),
+                'start_time' => substr((string) ($row->start_time ?? '-'), 0, 5),
+                'end_time' => substr((string) ($row->end_time ?? '-'), 0, 5),
+                'name' => (string) ($row->name ?? '-'),
+                'status' => (string) ($row->status ?? '-'),
+                'booking_code' => (string) ($row->bookingcode ?? '-'),
+            ]);
+    }
+
+    public function adminService(Request $request)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'service')) {
+            return $this->sidebarPermissionDenied($request);
+        }
+
+        $website = $this->websiteSettings();
+        $sidebarServices = $this->sidebarServices();
+        $allServiceRows = $this->servicePageRows();
+        $page = (int) $request->query('page', 1);
+        if ($page < 1) {
+            $page = 1;
+        }
+        $perPage = 20;
+        $totalRows = count($allServiceRows);
+        $lastPage = max(1, (int) ceil($totalRows / $perPage));
+        if ($page > $lastPage) {
+            $page = $lastPage;
+        }
+        $offset = ($page - 1) * $perPage;
+        $serviceRows = array_values(array_slice($allServiceRows, $offset, $perPage));
+        $countOnPage = count($serviceRows);
+        $servicePagination = [
+            'page' => $page,
+            'per_page' => $perPage,
+            'total' => $totalRows,
+            'last_page' => $lastPage,
+            'from' => $totalRows > 0 ? ($offset + 1) : 0,
+            'to' => $totalRows > 0 ? min($offset + $countOnPage, $totalRows) : 0,
+        ];
+
+        if ($request->expectsJson() || $request->ajax()) {
+            $html = view('admin.partials.service-list', [
+                'serviceRows' => $serviceRows,
+                'servicePagination' => $servicePagination,
+            ])->render();
+
+            return response()->json([
+                'status' => 'ok',
+                'html' => $html,
+                'pagination' => $servicePagination,
+            ]);
+        }
+
+        $data = [
+            'title' => 'Service | ' . $website['name'],
+            'adminAuth' => $adminAuth,
+            'showAdminMenu' => true,
+            'sidebarPermissionMap' => $this->sidebarPermissionMapForAuth($adminAuth),
+            'sidebarServices' => $sidebarServices,
+            'serviceRows' => $serviceRows,
+            'servicePagination' => $servicePagination,
+            'website' => $website,
+            'pageScript' => 'admin-service.js',
+        ];
+
+        $this->renderParts(['all.header', 'all.menu', 'admin.service', 'all.footer'], $data);
+    }
+
+    public function adminServiceStore(Request $request)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'service')) {
+            return $this->sidebarPermissionDenied($request);
+        }
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'detail' => ['required', 'string', 'max:255'],
+            'duration' => ['required', 'string', 'max:255'],
+            'price' => ['required', 'string', 'max:255'],
+            'descriptions_text' => ['nullable', 'string', 'max:10000'],
+        ]);
+
+        $normalizedDescriptionsText = str_replace(['\\r\\n', '\\n', '\\r'], "\n", (string) ($validated['descriptions_text'] ?? ''));
+        $lines = preg_split('/\r\n|\r|\n/', $normalizedDescriptionsText) ?: [];
+        $descriptions = collect($lines)
+            ->map(fn($line) => trim((string) $line))
+            ->filter()
+            ->values();
+
+        $request->attributes->set('activity_action_override', 'Create Service');
+        $request->attributes->set(
+            'activity_detail_override',
+            'Create Service ' . trim((string) ($validated['name'] ?? '-'))
+            . '; duration ' . trim((string) ($validated['duration'] ?? '-'))
+            . '; price ' . trim((string) ($validated['price'] ?? '-'))
+        );
+
+        DB::connection('mysql')->transaction(function () use ($validated, $descriptions) {
+            $serviceId = DB::connection('mysql')
+                ->table('neoura.service')
+                ->insertGetId([
+                    'name' => $validated['name'],
+                    'detail' => $validated['detail'],
+                    'duration' => $validated['duration'],
+                    'price' => $validated['price'],
+                ]);
+
+            if ($descriptions->isNotEmpty()) {
+                $rows = $descriptions->map(function ($description) use ($serviceId) {
+                    return [
+                        'name' => $description,
+                        'serviceid' => $serviceId,
+                    ];
+                })->all();
+
+                DB::connection('mysql')
+                    ->table('neoura.description')
+                    ->insert($rows);
+            }
+        });
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'status' => 'ok',
+                'message' => 'Service added.',
+            ]);
+        }
+
+        return redirect()->route('admin.service')->with('status', 'Service added.');
+    }
+
+    public function adminServiceUpdate(Request $request, int $serviceid)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'service')) {
+            return $this->sidebarPermissionDenied($request);
+        }
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'detail' => ['required', 'string', 'max:255'],
+            'duration' => ['required', 'string', 'max:255'],
+            'price' => ['required', 'string', 'max:255'],
+            'descriptions_text' => ['nullable', 'string', 'max:10000'],
+        ]);
+
+        $service = DB::connection('mysql')
+            ->table('neoura.service')
+            ->where('serviceid', $serviceid)
+            ->first();
+
+        if (!$service) {
+            return redirect()->route('admin.service')->withErrors(['service' => 'Service not found.']);
+        }
+
+        $normalizedDescriptionsText = str_replace(['\\r\\n', '\\n', '\\r'], "\n", (string) ($validated['descriptions_text'] ?? ''));
+        $lines = preg_split('/\r\n|\r|\n/', $normalizedDescriptionsText) ?: [];
+        $descriptions = collect($lines)
+            ->map(fn($line) => trim((string) $line))
+            ->filter()
+            ->values();
+
+        $beforeSnapshot = $this->serviceSnapshotById($serviceid) ?? [];
+        $nextSnapshot = $this->normalizeServiceSnapshotFromInput($serviceid, $validated, $descriptions->all());
+        $changes = $this->serviceRecycleChangesForUpdate($beforeSnapshot, $nextSnapshot);
+        $serviceName = trim((string) ($beforeSnapshot['name'] ?? $validated['name'] ?? ''));
+        $request->attributes->set('activity_action_override', 'Edit Service');
+        $request->attributes->set(
+            'activity_detail_override',
+            'Edit Service ' . ($serviceName !== '' ? $serviceName : ('#' . $serviceid))
+            . '; ' . $this->serviceActivityDetailFromChanges($changes)
+        );
+        $this->archiveServiceRecycleEntry('update', $serviceid, $adminAuth, (string) $request->ip(), $nextSnapshot);
+
+        DB::connection('mysql')->transaction(function () use ($serviceid, $validated, $descriptions) {
+            DB::connection('mysql')
+                ->table('neoura.service')
+                ->where('serviceid', $serviceid)
+                ->update([
+                    'name' => $validated['name'],
+                    'detail' => $validated['detail'],
+                    'duration' => $validated['duration'],
+                    'price' => $validated['price'],
+                ]);
+
+            DB::connection('mysql')
+                ->table('neoura.description')
+                ->where('serviceid', $serviceid)
+                ->delete();
+
+            if ($descriptions->isNotEmpty()) {
+                $rows = $descriptions->map(function ($description) use ($serviceid) {
+                    return [
+                        'name' => $description,
+                        'serviceid' => $serviceid,
+                    ];
+                })->all();
+
+                DB::connection('mysql')
+                    ->table('neoura.description')
+                    ->insert($rows);
+            }
+        });
+
+        return redirect()->route('admin.service')->with('status', 'Service updated.');
+    }
+
+    public function adminServiceDelete(Request $request, int $serviceid)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'service')) {
+            return $this->sidebarPermissionDenied($request);
+        }
+
+        $service = DB::connection('mysql')
+            ->table('neoura.service')
+            ->where('serviceid', $serviceid)
+            ->first();
+
+        if (!$service) {
+            return redirect()->route('admin.service')->withErrors(['service' => 'Service not found.']);
+        }
+
+        $request->attributes->set('activity_action_override', 'Delete Service');
+        $request->attributes->set(
+            'activity_detail_override',
+            'Delete Service ' . trim((string) ($service->name ?? ('#' . $serviceid)))
+            . '; duration ' . trim((string) ($service->duration ?? '-'))
+            . '; price ' . trim((string) ($service->price ?? '-'))
+        );
+
+        $this->archiveServiceRecycleEntry('delete', $serviceid, $adminAuth, (string) $request->ip());
+
+        DB::connection('mysql')->transaction(function () use ($serviceid) {
+            DB::connection('mysql')
+                ->table('neoura.description')
+                ->where('serviceid', $serviceid)
+                ->delete();
+
+            DB::connection('mysql')
+                ->table('neoura.service')
+                ->where('serviceid', $serviceid)
+                ->delete();
+        });
+
+        return redirect()->route('admin.service')->with('status', 'Service deleted.');
+    }
+
+    public function superAdminRecycleBin(Request $request)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'recycle')) {
+            return $this->sidebarPermissionDenied($request);
+        }
+
+        $website = $this->websiteSettings();
+        $sidebarServices = $this->sidebarServices();
+        $entries = $this->serviceRecycleBinEntries();
+        $selectedLevel = strtolower(trim((string) $request->query('level', 'all')));
+        $selectedAction = strtolower(trim((string) $request->query('action', 'all')));
+        $page = (int) $request->query('page', 1);
+        if ($page < 1) {
+            $page = 1;
+        }
+
+        $levelOptions = collect($entries)
+            ->map(fn($entry) => strtolower(trim((string) ($entry['actor']['levelname'] ?? ''))))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $filteredRecycleEntries = collect($entries)
+            ->filter(function ($entry) use ($selectedLevel, $selectedAction) {
+                if (!is_array($entry)) {
+                    return false;
+                }
+
+                $entryLevel = strtolower(trim((string) ($entry['actor']['levelname'] ?? '')));
+                $entryAction = strtolower(trim((string) ($entry['action'] ?? '')));
+
+                if ($selectedLevel !== '' && $selectedLevel !== 'all' && $entryLevel !== $selectedLevel) {
+                    return false;
+                }
+
+                if ($selectedAction !== '' && $selectedAction !== 'all' && $entryAction !== $selectedAction) {
+                    return false;
+                }
+
+                return true;
+            })
+            ->values()
+            ->all();
+
+        $perPage = 20;
+        $totalRows = count($filteredRecycleEntries);
+        $lastPage = max(1, (int) ceil($totalRows / $perPage));
+        if ($page > $lastPage) {
+            $page = $lastPage;
+        }
+        $offset = ($page - 1) * $perPage;
+        $recycleEntries = array_values(array_slice($filteredRecycleEntries, $offset, $perPage));
+        $countOnPage = count($recycleEntries);
+        $recyclePagination = [
+            'page' => $page,
+            'per_page' => $perPage,
+            'total' => $totalRows,
+            'last_page' => $lastPage,
+            'from' => $totalRows > 0 ? ($offset + 1) : 0,
+            'to' => $totalRows > 0 ? min($offset + $countOnPage, $totalRows) : 0,
+        ];
+
+        if ($request->expectsJson() || $request->ajax()) {
+            $html = view('superadmin.partials.recycle-bin-table', [
+                'recycleEntries' => $recycleEntries,
+                'recyclePagination' => $recyclePagination,
+            ])->render();
+
+            return response()->json([
+                'status' => 'ok',
+                'html' => $html,
+                'count' => count($recycleEntries),
+                'pagination' => $recyclePagination,
+            ]);
+        }
+
+        $data = [
+            'title' => 'Recycle Bin | ' . $website['name'],
+            'adminAuth' => $adminAuth,
+            'showAdminMenu' => true,
+            'sidebarPermissionMap' => $this->sidebarPermissionMapForAuth($adminAuth),
+            'sidebarServices' => $sidebarServices,
+            'website' => $website,
+            'recycleEntries' => $recycleEntries,
+            'recyclePagination' => $recyclePagination,
+            'recycleLevelOptions' => $levelOptions,
+            'selectedRecycleLevel' => $selectedLevel,
+            'selectedRecycleAction' => $selectedAction,
+            'pageScript' => 'superadmin-recycle-bin.js',
+        ];
+
+        $this->renderParts(['all.header', 'all.menu', 'superadmin.recycle-bin', 'all.footer'], $data);
+    }
+
+    public function superAdminRecycleBinRestore(Request $request, string $recycleId)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'recycle')) {
+            return $this->sidebarPermissionDenied($request);
+        }
+
+        $targetId = trim($recycleId);
+        if ($targetId === '') {
+            return redirect()->route('superadmin.recyclebin')->withErrors(['recycle' => 'Invalid recycle item ID.']);
+        }
+
+        $entries = $this->serviceRecycleBinEntries();
+        $index = null;
+        $entry = null;
+
+        foreach ($entries as $cursor => $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            if ((string) ($item['recycle_id'] ?? '') === $targetId) {
+                $index = $cursor;
+                $entry = $item;
+                break;
+            }
+        }
+
+        if ($index === null || !is_array($entry)) {
+            return redirect()->route('superadmin.recyclebin')->withErrors(['recycle' => 'Recycle item not found.']);
+        }
+
+        $snapshot = $entry['service'] ?? null;
+        if (!is_array($snapshot)) {
+            return redirect()->route('superadmin.recyclebin')->withErrors(['recycle' => 'Recycle snapshot is invalid.']);
+        }
+
+        DB::connection('mysql')->transaction(function () use ($snapshot) {
+            $this->restoreServiceFromSnapshot($snapshot);
+        });
+
+        unset($entries[$index]);
+        $this->saveServiceRecycleBinEntries(array_values($entries));
+
+        return redirect()->route('superadmin.recyclebin')->with('status', 'Service restored from recycle bin.');
+    }
+
+    public function superAdminRecycleBinDeletePermanent(Request $request, string $recycleId)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'recycle')) {
+            return $this->sidebarPermissionDenied($request);
+        }
+
+        $targetId = trim($recycleId);
+        if ($targetId === '') {
+            return redirect()->route('superadmin.recyclebin')->withErrors(['recycle' => 'Invalid recycle item ID.']);
+        }
+
+        $entries = $this->serviceRecycleBinEntries();
+        $index = null;
+        $entry = null;
+
+        foreach ($entries as $cursor => $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            if ((string) ($item['recycle_id'] ?? '') === $targetId) {
+                $index = $cursor;
+                $entry = $item;
+                break;
+            }
+        }
+
+        if ($index === null || !is_array($entry)) {
+            return redirect()->route('superadmin.recyclebin')->withErrors(['recycle' => 'Recycle item not found.']);
+        }
+
+        $action = strtolower(trim((string) ($entry['action'] ?? '')));
+        $serviceId = (int) (($entry['service']['serviceid'] ?? 0));
+
+        if ($action === 'delete' && $serviceId > 0) {
+            $remainingEntries = array_values(array_filter($entries, function ($item) use ($serviceId) {
+                if (!is_array($item)) {
+                    return false;
+                }
+
+                return (int) (($item['service']['serviceid'] ?? 0)) !== $serviceId;
+            }));
+
+            $removedCount = count($entries) - count($remainingEntries);
+            $this->saveServiceRecycleBinEntries($remainingEntries);
+
+            return redirect()->route('superadmin.recyclebin')->with(
+                'status',
+                $removedCount > 1
+                    ? 'Delete action purged permanently, including related edit/delete history for the same service.'
+                    : 'Delete action purged permanently.'
+            );
+        }
+
+        unset($entries[$index]);
+        $this->saveServiceRecycleBinEntries(array_values($entries));
+
+        return redirect()->route('superadmin.recyclebin')->with('status', 'Recycle history item deleted permanently.');
+    }
+
+    public function adminPaymentValidation(Request $request)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'payment')) {
+            return $this->sidebarPermissionDenied($request);
+        }
+
+        $selectedBank = trim((string) $request->query('bank', ''));
+        $page = (int) $request->query('page', 1);
+        if ($page < 1) {
+            $page = 1;
+        }
+        $allPaymentRows = $this->paymentValidationRows();
+        $filteredPaymentRows = $this->paymentValidationRows($selectedBank);
+        $perPage = 15;
+        $totalRows = count($filteredPaymentRows);
+        $lastPage = max(1, (int) ceil($totalRows / $perPage));
+        if ($page > $lastPage) {
+            $page = $lastPage;
+        }
+        $offset = ($page - 1) * $perPage;
+        $paymentRows = array_values(array_slice($filteredPaymentRows, $offset, $perPage));
+        $countOnPage = count($paymentRows);
+        $paymentPagination = [
+            'page' => $page,
+            'per_page' => $perPage,
+            'total' => $totalRows,
+            'last_page' => $lastPage,
+            'from' => $totalRows > 0 ? ($offset + 1) : 0,
+            'to' => $totalRows > 0 ? min($offset + $countOnPage, $totalRows) : 0,
+        ];
+        $bankOptions = collect($allPaymentRows)
+            ->pluck('bank')
+            ->map(fn($bank) => trim((string) $bank))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($request->expectsJson() || $request->ajax()) {
+            $html = view('admin.partials.payment-validation-list', [
+                'paymentRows' => $paymentRows,
+                'paymentPagination' => $paymentPagination,
+            ])->render();
+            return response()->json([
+                'status' => 'ok',
+                'html' => $html,
+                'count' => count($paymentRows),
+                'pagination' => $paymentPagination,
+            ]);
+        }
+
+        $website = $this->websiteSettings();
+        $sidebarServices = $this->sidebarServices();
+
+        $data = [
+            'title' => 'Payment Validation | ' . $website['name'],
+            'adminAuth' => $adminAuth,
+            'showAdminMenu' => true,
+            'sidebarPermissionMap' => $this->sidebarPermissionMapForAuth($adminAuth),
+            'sidebarServices' => $sidebarServices,
+            'website' => $website,
+            'selectedBank' => $selectedBank,
+            'bankOptions' => $bankOptions,
+            'paymentRows' => $paymentRows,
+            'paymentPagination' => $paymentPagination,
+            'pageScript' => 'admin-payment.js',
+        ];
+
+        $this->renderParts(['all.header', 'all.menu', 'admin.payment-validation', 'all.footer'], $data);
+    }
+
+    private function paymentValidationRows(string $bankFilter = ''): array
+    {
+        $query = DB::connection('mysql')
+            ->table('neoura.payment as p')
+            ->join('neoura.booking as b', 'b.bookingid', '=', 'p.bookingid')
+            ->leftJoin('neoura.service as s', 's.serviceid', '=', 'b.serviceid')
+            ->leftJoin('neoura.timeslot as t', 't.slotid', '=', 'b.slotid')
+            ->select(
+                'p.paymentid',
+                'p.paymentdate',
+                'p.bank',
+                'p.proof',
+                'b.bookingid',
+                'b.bookingcode',
+                'b.name',
+                'b.email',
+                'b.phonenumber',
+                'b.status',
+                's.name as service_name',
+                't.date as booking_date',
+                't.start_time',
+                't.end_time'
+            );
+
+        if ($bankFilter !== '') {
+            $query->where('p.bank', $bankFilter);
+        }
+
+        return $query
+            ->orderByDesc('p.paymentdate')
+            ->orderByDesc('p.paymentid')
+            ->get()
+            ->map(function ($row) {
+                $proof = trim((string) ($row->proof ?? ''));
+                $proofUrl = $proof;
+                if ($proof !== '' && !Str::startsWith($proof, ['http://', 'https://'])) {
+                    $proofUrl = asset(ltrim($proof, '/'));
+                }
+
+                return [
+                    'paymentid' => (int) ($row->paymentid ?? 0),
+                    'bookingid' => (int) ($row->bookingid ?? 0),
+                    'booking_code' => (string) ($row->bookingcode ?? '-'),
+                    'name' => (string) ($row->name ?? '-'),
+                    'email' => (string) ($row->email ?? '-'),
+                    'phone' => (string) ($row->phonenumber ?? '-'),
+                    'status' => (string) ($row->status ?? 'Pending'),
+                    'service_name' => (string) ($row->service_name ?? '-'),
+                    'booking_date' => (string) ($row->booking_date ?? '-'),
+                    'start_time' => substr((string) ($row->start_time ?? '-'), 0, 5),
+                    'end_time' => substr((string) ($row->end_time ?? '-'), 0, 5),
+                    'payment_date' => (string) ($row->paymentdate ?? '-'),
+                    'bank' => (string) ($row->bank ?? '-'),
+                    'proof' => $proof,
+                    'proof_url' => $proofUrl,
+                    'is_image_proof' => preg_match('/\.(jpg|jpeg|png|gif|webp)$/i', $proof) === 1,
+                ];
+            })
+            ->all();
+    }
+
+    public function adminPaymentValidationUpdate(Request $request, int $bookingid)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'payment')) {
+            return $this->sidebarPermissionDenied($request);
+        }
+
+        $validated = $request->validate([
+            'action' => ['required', 'in:approve,reject'],
+        ]);
+
+        $booking = DB::connection('mysql')
+            ->table('neoura.booking')
+            ->select('bookingid', 'slotid', 'status')
+            ->where('bookingid', $bookingid)
+            ->first();
+
+        if (!$booking) {
+            return redirect()->route('admin.payment')->withErrors(['payment' => 'Booking not found.']);
+        }
+
+        $nextStatus = $validated['action'] === 'approve' ? 'Approved' : 'Rejected';
+        $previousStatus = trim((string) ($booking->status ?? 'Pending'));
+        $request->attributes->set('activity_action_override', 'Update Payment Validation');
+        $request->attributes->set(
+            'activity_detail_override',
+            'Booking #' . $bookingid . '; status from ' . ($previousStatus !== '' ? $previousStatus : 'Pending') . ' to ' . $nextStatus
+        );
+
+        DB::connection('mysql')->transaction(function () use ($booking, $bookingid, $nextStatus) {
+            DB::connection('mysql')
+                ->table('neoura.booking')
+                ->where('bookingid', $bookingid)
+                ->update(['status' => $nextStatus]);
+
+            if ($nextStatus === 'Rejected') {
+                DB::connection('mysql')
+                    ->table('neoura.timeslot')
+                    ->where('slotid', (int) ($booking->slotid ?? 0))
+                    ->update(['is_booked' => 0]);
+            }
+        });
+
+        return redirect()->route('admin.payment')->with('status', 'Payment status updated to ' . $nextStatus . '.');
+    }
+
+    public function adminUserData(Request $request)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'user')) {
+            return $this->sidebarPermissionDenied($request);
+        }
+
+        $search = trim((string) $request->query('q', ''));
+        if (mb_strlen($search) > 100) {
+            $search = mb_substr($search, 0, 100);
+        }
+
+        $levelId = (int) $request->query('levelid', 0);
+        if ($levelId < 1) {
+            $levelId = 0;
+        }
+
+        $page = (int) $request->query('page', 1);
+        if ($page < 1) {
+            $page = 1;
+        }
+
+        $perPage = 20;
+        $searchLike = '%' . $search . '%';
+
+        $baseUserQuery = DB::connection('mysql')
+            ->table('neoura.user as u')
+            ->leftJoin('neoura.employer as e', 'e.userid', '=', 'u.userid')
+            ->leftJoin('neoura.level as l', 'l.levelid', '=', 'u.levelid')
+            ->select(
+                'u.userid',
+                'u.username',
+                'u.levelid as user_levelid',
+                'e.name as employer_name',
+                'e.email as employer_email',
+                'e.phonenumber as employer_phone',
+                'l.levelname'
+            );
+
+        if ($levelId > 0) {
+            $baseUserQuery->where('u.levelid', $levelId);
+        }
+
+        if ($search !== '') {
+            $baseUserQuery->where(function ($query) use ($searchLike) {
+                $query
+                    ->where('u.username', 'like', $searchLike)
+                    ->orWhere('e.name', 'like', $searchLike)
+                    ->orWhere('e.email', 'like', $searchLike)
+                    ->orWhere('e.phonenumber', 'like', $searchLike)
+                    ->orWhere('l.levelname', 'like', $searchLike);
+            });
+        }
+
+        $totalRows = (clone $baseUserQuery)->count('u.userid');
+        $lastPage = max(1, (int) ceil($totalRows / $perPage));
+        if ($page > $lastPage) {
+            $page = $lastPage;
+        }
+
+        $offset = ($page - 1) * $perPage;
+
+        $userRows = $baseUserQuery
+            ->orderBy('u.userid')
+            ->offset($offset)
+            ->limit($perPage)
+            ->get()
+            ->map(function ($row) {
+                return [
+                    'userid' => (int) ($row->userid ?? 0),
+                    'levelid' => (int) ($row->user_levelid ?? 0),
+                    'username' => trim((string) ($row->username ?? '')) ?: '-',
+                    'name' => trim((string) ($row->employer_name ?? '')) ?: '-',
+                    'email' => trim((string) ($row->employer_email ?? '')) ?: '-',
+                    'phonenumber' => trim((string) ($row->employer_phone ?? '')) ?: '-',
+                    'level' => trim((string) ($row->levelname ?? '')) ?: '-',
+                ];
+            })
+            ->all();
+
+        $levelOptions = DB::connection('mysql')
+            ->table('neoura.level')
+            ->select('levelid', 'levelname')
+            ->orderBy('levelid')
+            ->get()
+            ->map(function ($row) {
+                return [
+                    'levelid' => (int) ($row->levelid ?? 0),
+                    'levelname' => trim((string) ($row->levelname ?? '')) ?: '-',
+                ];
+            })
+            ->filter(fn($row) => ($row['levelid'] ?? 0) > 0)
+            ->values()
+            ->all();
+
+        $countOnPage = count($userRows);
+        $from = $totalRows > 0 ? ($offset + 1) : 0;
+        $to = $totalRows > 0 ? min($offset + $countOnPage, $totalRows) : 0;
+        $pagination = [
+            'page' => $page,
+            'per_page' => $perPage,
+            'total' => $totalRows,
+            'last_page' => $lastPage,
+            'from' => $from,
+            'to' => $to,
+        ];
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'status' => 'ok',
+                'rows' => $userRows,
+                'filters' => [
+                    'q' => $search,
+                    'levelid' => $levelId,
+                ],
+                'pagination' => $pagination,
+            ]);
+        }
+
+        $website = $this->websiteSettings();
+        $sidebarServices = $this->sidebarServices();
+        $data = [
+            'title' => 'User Data | ' . $website['name'],
+            'adminAuth' => $adminAuth,
+            'showAdminMenu' => true,
+            'sidebarPermissionMap' => $this->sidebarPermissionMapForAuth($adminAuth),
+            'sidebarServices' => $sidebarServices,
+            'website' => $website,
+            'userRows' => $userRows,
+            'userFilters' => [
+                'q' => $search,
+                'levelid' => $levelId,
+            ],
+            'userPagination' => $pagination,
+            'levelOptions' => $levelOptions,
+            'pageScript' => 'admin-user-data.js',
+        ];
+
+        $this->renderParts(['all.header', 'all.menu', 'admin.user-data', 'all.footer'], $data);
+    }
+
+    public function adminUserStore(Request $request): JsonResponse
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized.'], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'user')) {
+            return response()->json(['status' => 'error', 'message' => 'You do not have access to this menu.'], 403);
+        }
+
+        $validated = $request->validate([
+            'username' => ['required', 'string', 'max:255'],
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255'],
+            'phonenumber' => ['required', 'string', 'max:255'],
+            'levelid' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $username = trim((string) ($validated['username'] ?? ''));
+        if ($username === '') {
+            return response()->json(['status' => 'error', 'message' => 'Username is required.'], 422);
+        }
+
+        $existingUsername = DB::connection('mysql')
+            ->table('neoura.user')
+            ->whereRaw('LOWER(username) = ?', [strtolower($username)])
+            ->exists();
+        if ($existingUsername) {
+            return response()->json(['status' => 'error', 'message' => 'Username already exists.'], 422);
+        }
+
+        $level = DB::connection('mysql')
+            ->table('neoura.level')
+            ->select('levelid', 'levelname')
+            ->where('levelid', (int) $validated['levelid'])
+            ->first();
+        if (!$level) {
+            return response()->json(['status' => 'error', 'message' => 'Invalid level.'], 422);
+        }
+
+        $targetLevel = strtolower(trim((string) ($level->levelname ?? '')));
+        $actorLevel = strtolower(trim((string) ($adminAuth['levelname'] ?? '')));
+        if ($targetLevel === 'superadmin' && $actorLevel !== 'superadmin') {
+            return response()->json(['status' => 'error', 'message' => 'Only superadmin can create superadmin account.'], 403);
+        }
+
+        $userId = DB::connection('mysql')->transaction(function () use ($validated, $username) {
+            $newUserId = DB::connection('mysql')
+                ->table('neoura.user')
+                ->insertGetId([
+                    'username' => $username,
+                    'password' => Hash::make($username),
+                    'levelid' => (int) $validated['levelid'],
+                ]);
+
+            DB::connection('mysql')
+                ->table('neoura.employer')
+                ->insert([
+                    'name' => $validated['name'],
+                    'email' => $validated['email'],
+                    'phonenumber' => $validated['phonenumber'],
+                    'userid' => $newUserId,
+                ]);
+
+            return $newUserId;
+        });
+
+        $request->attributes->set('activity_action_override', 'Create User');
+        $request->attributes->set(
+            'activity_detail_override',
+            'Create user ' . $username
+            . '; name ' . trim((string) ($validated['name'] ?? '-'))
+            . '; email ' . trim((string) ($validated['email'] ?? '-'))
+            . '; phone ' . trim((string) ($validated['phonenumber'] ?? '-'))
+            . '; level ' . trim((string) ($level->levelname ?? '-'))
+        );
+
+        return response()->json([
+            'status' => 'ok',
+            'message' => 'User added successfully.',
+            'user' => [
+                'userid' => (int) $userId,
+                'username' => $username,
+                'name' => (string) $validated['name'],
+                'email' => (string) $validated['email'],
+                'phonenumber' => (string) $validated['phonenumber'],
+                'level' => trim((string) ($level->levelname ?? '-')) ?: '-',
+            ],
+        ]);
+    }
+
+    public function adminUserResetPassword(Request $request, int $userid): JsonResponse
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized.'], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'user')) {
+            return response()->json(['status' => 'error', 'message' => 'You do not have access to this menu.'], 403);
+        }
+
+        $target = DB::connection('mysql')
+            ->table('neoura.user as u')
+            ->leftJoin('neoura.level as l', 'l.levelid', '=', 'u.levelid')
+            ->select('u.userid', 'u.username', 'l.levelname')
+            ->where('u.userid', $userid)
+            ->first();
+
+        if (!$target) {
+            return response()->json(['status' => 'error', 'message' => 'User not found.'], 404);
+        }
+
+        $targetLevel = strtolower(trim((string) ($target->levelname ?? '')));
+        $actorLevel = strtolower(trim((string) ($adminAuth['levelname'] ?? '')));
+        if ($targetLevel === 'superadmin' && $actorLevel !== 'superadmin') {
+            return response()->json(['status' => 'error', 'message' => 'Only superadmin can reset superadmin password.'], 403);
+        }
+
+        $username = trim((string) ($target->username ?? ''));
+        if ($username === '') {
+            return response()->json(['status' => 'error', 'message' => 'Username is invalid.'], 422);
+        }
+
+        DB::connection('mysql')
+            ->table('neoura.user')
+            ->where('userid', $userid)
+            ->update([
+                'password' => Hash::make($username),
+            ]);
+
+        $request->attributes->set('activity_action_override', 'Reset User Password');
+        $request->attributes->set('activity_detail_override', 'Reset password for user ' . $username . ' (userid ' . $userid . ').');
+
+        return response()->json([
+            'status' => 'ok',
+            'message' => 'Password reset successful. Default password is username.',
+        ]);
+    }
+
+    public function adminUserDelete(Request $request, int $userid): JsonResponse
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized.'], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'user')) {
+            return response()->json(['status' => 'error', 'message' => 'You do not have access to this menu.'], 403);
+        }
+
+        $actorUserId = (int) ($adminAuth['userid'] ?? 0);
+        if ($actorUserId > 0 && $actorUserId === $userid) {
+            return response()->json(['status' => 'error', 'message' => 'You cannot delete your own account.'], 422);
+        }
+
+        $target = DB::connection('mysql')
+            ->table('neoura.user as u')
+            ->leftJoin('neoura.level as l', 'l.levelid', '=', 'u.levelid')
+            ->select('u.userid', 'u.username', 'l.levelname')
+            ->where('u.userid', $userid)
+            ->first();
+
+        if (!$target) {
+            return response()->json(['status' => 'error', 'message' => 'User not found.'], 404);
+        }
+
+        $targetLevel = strtolower(trim((string) ($target->levelname ?? '')));
+        $actorLevel = strtolower(trim((string) ($adminAuth['levelname'] ?? '')));
+        if ($targetLevel === 'superadmin' && $actorLevel !== 'superadmin') {
+            return response()->json(['status' => 'error', 'message' => 'Only superadmin can delete superadmin account.'], 403);
+        }
+
+        DB::connection('mysql')->transaction(function () use ($userid) {
+            DB::connection('mysql')
+                ->table('neoura.employer')
+                ->where('userid', $userid)
+                ->delete();
+
+            DB::connection('mysql')
+                ->table('neoura.user')
+                ->where('userid', $userid)
+                ->delete();
+        });
+
+        $request->attributes->set('activity_action_override', 'Delete User');
+        $request->attributes->set(
+            'activity_detail_override',
+            'Delete user ' . trim((string) ($target->username ?? ('#' . $userid)))
+            . '; level ' . trim((string) ($target->levelname ?? '-'))
+        );
+
+        return response()->json([
+            'status' => 'ok',
+            'message' => 'User deleted.',
+        ]);
+    }
+
+    public function adminActivityLog(Request $request)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'activity')) {
+            return $this->sidebarPermissionDenied($request);
+        }
+
+        $website = $this->websiteSettings();
+        $sidebarServices = $this->sidebarServices();
+        $actorLevel = strtolower(trim((string) ($adminAuth['levelname'] ?? '')));
+        $actorUserId = (int) ($adminAuth['userid'] ?? 0);
+
+        $filteredEntries = collect($this->activityLogEntries())
+            ->filter(fn($entry) => is_array($entry))
+            ->filter(function ($entry) use ($actorLevel, $actorUserId) {
+                if (!is_array($entry)) {
+                    return false;
+                }
+
+                $actor = is_array($entry['actor'] ?? null) ? $entry['actor'] : [];
+                $entryUserId = (int) ($actor['userid'] ?? 0);
+                $entryLevel = strtolower(trim((string) ($actor['levelname'] ?? '')));
+
+                if ($actorLevel === 'admin') {
+                    return $actorUserId > 0 && $entryUserId === $actorUserId;
+                }
+
+                if ($actorLevel === 'superadmin') {
+                    return in_array($entryLevel, ['admin', 'superadmin'], true);
+                }
+
+                return false;
+            })
+            ->values()
+            ->all();
+
+        $page = (int) $request->query('page', 1);
+        if ($page < 1) {
+            $page = 1;
+        }
+
+        $perPage = 20;
+        $totalRows = count($filteredEntries);
+        $lastPage = max(1, (int) ceil($totalRows / $perPage));
+        if ($page > $lastPage) {
+            $page = $lastPage;
+        }
+
+        $offset = ($page - 1) * $perPage;
+        $activityEntries = collect($filteredEntries)
+            ->slice($offset, $perPage)
+            ->values()
+            ->all();
+
+        $countOnPage = count($activityEntries);
+        $from = $totalRows > 0 ? ($offset + 1) : 0;
+        $to = $totalRows > 0 ? min($offset + $countOnPage, $totalRows) : 0;
+        $pagination = [
+            'page' => $page,
+            'per_page' => $perPage,
+            'total' => $totalRows,
+            'last_page' => $lastPage,
+            'from' => $from,
+            'to' => $to,
+        ];
+
+        if ($request->expectsJson() || $request->ajax()) {
+            $html = view('admin.partials.activity-log-table', [
+                'activityEntries' => $activityEntries,
+                'activityPagination' => $pagination,
+            ])->render();
+
+            return response()->json([
+                'status' => 'ok',
+                'html' => $html,
+                'pagination' => $pagination,
+            ]);
+        }
+
+        $data = [
+            'title' => 'Activity Log | ' . $website['name'],
+            'adminAuth' => $adminAuth,
+            'showAdminMenu' => true,
+            'sidebarPermissionMap' => $this->sidebarPermissionMapForAuth($adminAuth),
+            'sidebarServices' => $sidebarServices,
+            'website' => $website,
+            'activityEntries' => $activityEntries,
+            'activityPagination' => $pagination,
+            'pageScript' => 'admin-activity-log.js',
+        ];
+
+        $this->renderParts(['all.header', 'all.menu', 'admin.activity-log', 'all.footer'], $data);
+    }
+
+    public function adminActivityLocationUpdate(Request $request): JsonResponse
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized.'], 403);
+        }
+
+        $validated = $request->validate([
+            'latitude' => ['required', 'numeric'],
+            'longitude' => ['required', 'numeric'],
+        ]);
+
+        $request->session()->put('admin_activity_coords', [
+            'latitude' => trim((string) ($validated['latitude'] ?? '')),
+            'longitude' => trim((string) ($validated['longitude'] ?? '')),
+        ]);
+
+        return response()->json([
+            'status' => 'ok',
+            'message' => 'Location saved.',
+        ]);
+    }
+
+    public function adminFinancialReport(Request $request)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'financial')) {
+            return $this->sidebarPermissionDenied($request);
+        }
+
+        $website = $this->websiteSettings();
+        $sidebarServices = $this->sidebarServices();
+
+        $data = [
+            'title' => 'Financial Report | ' . $website['name'],
+            'adminAuth' => $adminAuth,
+            'showAdminMenu' => true,
+            'sidebarPermissionMap' => $this->sidebarPermissionMapForAuth($adminAuth),
+            'sidebarServices' => $sidebarServices,
+            'website' => $website,
+        ];
+
+        $this->renderParts(['all.header', 'all.menu', 'admin.financial-report', 'all.footer'], $data);
+    }
+
+    public function account(Request $request)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+
+        $website = $this->websiteSettings();
+        $sidebarServices = $this->sidebarServices();
+
+        $userRow = DB::connection('mysql')
+            ->table('neoura.user as u')
+            ->leftJoin('neoura.employer as e', 'e.userid', '=', 'u.userid')
+            ->select(
+                'u.userid',
+                'u.username',
+                'u.password',
+                'u.levelid',
+                'e.employerid',
+                'e.name as employer_name',
+                'e.email as employer_email',
+                'e.phonenumber as employer_phone'
+            )
+            ->where('u.userid', $adminAuth['userid'] ?? 0)
+            ->first();
+
+        if (!$userRow) {
+            return redirect()->route('home')->withErrors(['account' => 'Account not found.']);
+        }
+
+        $data = [
+            'title' => 'Account | ' . $website['name'],
+            'adminAuth' => $adminAuth,
+            'showAdminMenu' => true,
+            'sidebarPermissionMap' => $this->sidebarPermissionMapForAuth($adminAuth),
+            'sidebarServices' => $sidebarServices,
+            'website' => $website,
+            'pageScript' => 'account.js',
+            'accountProfile' => [
+                'userid' => (int) $userRow->userid,
+                'employerid' => $userRow->employerid ? (int) $userRow->employerid : null,
+                'username' => (string) ($userRow->username ?? ''),
+                'name' => (string) ($userRow->employer_name ?? ''),
+                'email' => (string) ($userRow->employer_email ?? ''),
+                'phone' => (string) ($userRow->employer_phone ?? ''),
+            ],
+        ];
+
+        $this->renderParts(['all.header', 'all.menu', 'all.account', 'all.footer'], $data);
+    }
+
+    public function accountSendPhoneOtp(Request $request): JsonResponse
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized.'], 403);
+        }
+
+        $validated = $request->validate([
+            'phonenumber' => ['required', 'string', 'max:255'],
+        ]);
+
+        $targetPhone = trim((string) $validated['phonenumber']);
+        if ($targetPhone === '') {
+            return response()->json(['status' => 'error', 'message' => 'Phone number is required.'], 422);
+        }
+
+        $cooldownUntil = (int) $request->session()->get('account_phone_otp_cooldown_until', 0);
+        if ($cooldownUntil > time()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Please wait before requesting another OTP.',
+                'retry_after' => $cooldownUntil - time(),
+            ], 429);
+        }
+
+        $otp = (string) random_int(100000, 999999);
+        $result = $this->sendWhatsAppMessage($targetPhone, $this->phoneOtpMessageText($otp));
+        if (!(bool) ($result['sent'] ?? false)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to send OTP via WhatsApp. ' . ((string) ($result['reason'] ?? '')),
+            ], 422);
+        }
+
+        $request->session()->put('account_phone_otp', [
+            'phone' => $targetPhone,
+            'otp_hash' => hash('sha256', $otp),
+            'expires_at' => time() + 300,
+            'verified' => false,
+        ]);
+        $request->session()->put('account_phone_otp_cooldown_until', time() + 30);
+
+        return response()->json([
+            'status' => 'ok',
+            'message' => 'OTP has been sent to the new phone number.',
+        ]);
+    }
+
+    public function accountVerifyPhoneOtp(Request $request): JsonResponse
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized.'], 403);
+        }
+
+        $validated = $request->validate([
+            'phonenumber' => ['required', 'string', 'max:255'],
+            'otp_code' => ['required', 'regex:/^\d{6}$/'],
+        ]);
+
+        $otpSession = $request->session()->get('account_phone_otp');
+        if (!is_array($otpSession)) {
+            return response()->json(['status' => 'error', 'message' => 'OTP session not found. Please request OTP again.'], 422);
+        }
+
+        $targetPhone = trim((string) $validated['phonenumber']);
+        if (!hash_equals((string) ($otpSession['phone'] ?? ''), $targetPhone)) {
+            return response()->json(['status' => 'error', 'message' => 'Phone number does not match OTP target.'], 422);
+        }
+
+        if ((int) ($otpSession['expires_at'] ?? 0) < time()) {
+            return response()->json(['status' => 'error', 'message' => 'OTP expired. Please request a new OTP.'], 422);
+        }
+
+        $otpHash = hash('sha256', (string) $validated['otp_code']);
+        if (!hash_equals((string) ($otpSession['otp_hash'] ?? ''), $otpHash)) {
+            return response()->json(['status' => 'error', 'message' => 'OTP code is invalid.'], 422);
+        }
+
+        $otpSession['verified'] = true;
+        $request->session()->put('account_phone_otp', $otpSession);
+
+        return response()->json([
+            'status' => 'ok',
+            'message' => 'OTP verified successfully.',
+        ]);
+    }
+
+    public function accountUpdate(Request $request)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255'],
+            'phonenumber' => ['required', 'string', 'max:255'],
+            'current_password' => ['nullable', 'string'],
+            'new_password' => ['nullable', 'string', 'min:6', 'confirmed'],
+        ]);
+
+        $userRow = DB::connection('mysql')
+            ->table('neoura.user as u')
+            ->leftJoin('neoura.employer as e', 'e.userid', '=', 'u.userid')
+            ->select('u.userid', 'u.password', 'e.employerid', 'e.email as employer_email', 'e.phonenumber as employer_phone')
+            ->where('u.userid', $adminAuth['userid'] ?? 0)
+            ->first();
+
+        if (!$userRow) {
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json(['message' => 'Account not found.'], 404);
+            }
+            return redirect()->route('account')->withErrors(['account' => 'Account not found.']);
+        }
+
+        $newPassword = (string) ($validated['new_password'] ?? '');
+        $currentPhone = trim((string) ($userRow->employer_phone ?? ''));
+        $nextPhone = trim((string) ($validated['phonenumber'] ?? ''));
+        $isPhoneChanged = $nextPhone !== '' && !hash_equals($currentPhone, $nextPhone);
+        $currentEmail = trim((string) ($userRow->employer_email ?? ''));
+        $nextEmail = trim((string) ($validated['email'] ?? ''));
+        $isEmailChanged = $nextEmail !== '' && !hash_equals(strtolower($currentEmail), strtolower($nextEmail));
+
+        if ($isEmailChanged) {
+            $emailUsedByAnotherUser = DB::connection('mysql')
+                ->table('neoura.employer')
+                ->whereRaw('LOWER(email) = ?', [strtolower($nextEmail)])
+                ->where('userid', '!=', (int) $userRow->userid)
+                ->exists();
+
+            if ($emailUsedByAnotherUser) {
+                if ($request->expectsJson() || $request->ajax()) {
+                    return response()->json(['message' => 'Email is already used by another account.'], 422);
+                }
+                return back()->withErrors(['email' => 'Email is already used by another account.'])->withInput();
+            }
+        }
+
+        if ($isPhoneChanged) {
+            $otpSession = $request->session()->get('account_phone_otp');
+            $verified = is_array($otpSession)
+                && hash_equals((string) ($otpSession['phone'] ?? ''), $nextPhone)
+                && (bool) ($otpSession['verified'] ?? false)
+                && (int) ($otpSession['expires_at'] ?? 0) >= time();
+
+            if (!$verified) {
+                if ($request->expectsJson() || $request->ajax()) {
+                    return response()->json(['message' => 'Please verify OTP for the new phone number first.'], 422);
+                }
+                return back()->withErrors(['phonenumber' => 'Please verify OTP for the new phone number first.'])->withInput();
+            }
+        }
+
+        if ($newPassword !== '') {
+            $currentPassword = (string) ($validated['current_password'] ?? '');
+            if ($currentPassword === '') {
+                if ($request->expectsJson() || $request->ajax()) {
+                    return response()->json(['message' => 'Current password is required to set a new password.'], 422);
+                }
+                return back()->withErrors(['current_password' => 'Current password is required to set a new password.'])->withInput();
+            }
+
+            $storedPassword = (string) ($userRow->password ?? '');
+            $passwordValid = Hash::check($currentPassword, $storedPassword) || hash_equals($storedPassword, $currentPassword);
+            if (!$passwordValid) {
+                if ($request->expectsJson() || $request->ajax()) {
+                    return response()->json(['message' => 'Current password is incorrect.'], 422);
+                }
+                return back()->withErrors(['current_password' => 'Current password is incorrect.'])->withInput();
+            }
+        }
+
+        DB::connection('mysql')->transaction(function () use ($userRow, $validated, $newPassword, $nextEmail, $isEmailChanged) {
+            if ($newPassword !== '') {
+                DB::connection('mysql')
+                    ->table('neoura.user')
+                    ->where('userid', $userRow->userid)
+                    ->update([
+                        'password' => Hash::make($newPassword),
+                    ]);
+            }
+
+            $payload = [
+                'name' => $validated['name'],
+                'email' => $isEmailChanged ? (string) ($userRow->employer_email ?? '') : $nextEmail,
+                'phonenumber' => $validated['phonenumber'],
+                'userid' => $userRow->userid,
+            ];
+
+            if (!empty($userRow->employerid)) {
+                DB::connection('mysql')
+                    ->table('neoura.employer')
+                    ->where('employerid', $userRow->employerid)
+                    ->update($payload);
+            } else {
+                DB::connection('mysql')
+                    ->table('neoura.employer')
+                    ->insert($payload);
+            }
+        });
+
+        $emailVerificationSent = false;
+        $emailVerificationReason = '';
+        if ($isEmailChanged) {
+            $emailQueueResult = $this->queueAccountEmailChangeVerification((int) $userRow->userid, $nextEmail);
+            $emailVerificationSent = (bool) ($emailQueueResult['sent'] ?? false);
+            $emailVerificationReason = (string) ($emailQueueResult['reason'] ?? '');
+        }
+
+        $request->session()->put('admin_auth', array_merge($adminAuth, [
+            'employer_name' => $validated['name'],
+            'employer_email' => $isEmailChanged ? $currentEmail : $nextEmail,
+            'employer_phone' => $validated['phonenumber'],
+        ]));
+
+        if ($isPhoneChanged) {
+            $request->session()->forget(['account_phone_otp', 'account_phone_otp_cooldown_until']);
+        }
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'status' => 'ok',
+                'message' => $isEmailChanged
+                    ? (
+                        $emailVerificationSent
+                            ? 'Account updated. Please verify your new email using the link we sent.'
+                            : ('Account updated, but we failed to send verification email. ' . $emailVerificationReason)
+                    )
+                    : 'Account updated.',
+            ]);
+        }
+
+        if ($isEmailChanged) {
+            return redirect()->route('account')->with(
+                'status',
+                $emailVerificationSent
+                    ? 'Account updated. Please verify your new email using the link we sent.'
+                    : ('Account updated, but we failed to send verification email. ' . $emailVerificationReason)
+            );
+        }
+
+        return redirect()->route('account')->with('status', 'Account updated.');
+    }
+
+    public function accountVerifyEmailChange(Request $request, string $token)
+    {
+        $tokenValue = trim($token);
+        $website = $this->websiteSettings();
+
+        if ($tokenValue === '') {
+            return response()->view('errors.404', ['website' => $website], 404);
+        }
+
+        $rows = $this->pruneAccountEmailChangeRequests($this->accountEmailChangeRequests());
+        $this->saveAccountEmailChangeRequests($rows);
+
+        $target = null;
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            if (hash_equals((string) ($row['token'] ?? ''), $tokenValue)) {
+                $target = $row;
+                break;
+            }
+        }
+
+        if (!$target) {
+            return response()->view('errors.404', ['website' => $website], 404);
+        }
+
+        $userId = (int) ($target['userid'] ?? 0);
+        $nextEmail = trim((string) ($target['next_email'] ?? ''));
+        if ($userId <= 0 || $nextEmail === '') {
+            return response()->view('errors.404', ['website' => $website], 404);
+        }
+
+        $emailUsedByAnotherUser = DB::connection('mysql')
+            ->table('neoura.employer')
+            ->whereRaw('LOWER(email) = ?', [strtolower($nextEmail)])
+            ->where('userid', '!=', $userId)
+            ->exists();
+        if ($emailUsedByAnotherUser) {
+            return response()->view('errors.404', ['website' => $website], 404);
+        }
+
+        DB::connection('mysql')
+            ->table('neoura.employer')
+            ->where('userid', $userId)
+            ->update(['email' => $nextEmail]);
+
+        // Remove all pending email-change tokens for this user after successful verification.
+        $remainingRows = array_values(array_filter($rows, function ($row) use ($userId) {
+            if (!is_array($row)) {
+                return false;
+            }
+            return (int) ($row['userid'] ?? 0) !== $userId;
+        }));
+        $this->saveAccountEmailChangeRequests($remainingRows);
+
+        $adminAuth = $request->session()->get('admin_auth');
+        if (is_array($adminAuth) && (int) ($adminAuth['userid'] ?? 0) === $userId) {
+            $request->session()->put('admin_auth', array_merge($adminAuth, [
+                'employer_email' => $nextEmail,
+            ]));
+        }
+
+        $data = [
+            'title' => 'Email Verification Success | ' . $website['name'],
+            'website' => $website,
+            'redirectUrl' => route('account'),
+            'redirectSeconds' => 5,
+            'pageScript' => 'account-email-change-success.js',
+        ];
+
+        $this->renderParts(['all.header', 'all.account-email-change-success', 'all.footer'], $data);
+    }
+
+    private function forgotPasswordEmailRequestsFile(): string
+    {
+        return storage_path('app/forgot-password-email-requests.json');
+    }
+
+    private function forgotPasswordEmailRequests(): array
+    {
+        $file = $this->forgotPasswordEmailRequestsFile();
+        if (!is_file($file)) {
+            return [];
+        }
+
+        $raw = file_get_contents($file);
+        $decoded = json_decode((string) $raw, true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        return collect($decoded)
+            ->filter(fn($row) => is_array($row))
+            ->values()
+            ->all();
+    }
+
+    private function saveForgotPasswordEmailRequests(array $rows): void
+    {
+        $normalized = array_values(
+            collect($rows)
+                ->filter(fn($row) => is_array($row))
+                ->take(1000)
+                ->all()
+        );
+
+        file_put_contents(
+            $this->forgotPasswordEmailRequestsFile(),
+            json_encode($normalized, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+        );
+    }
+
+    private function pruneForgotPasswordEmailRequests(array $rows): array
+    {
+        $nowTs = time();
+        return array_values(array_filter($rows, function ($row) use ($nowTs) {
+            if (!is_array($row)) {
+                return false;
+            }
+
+            return (int) ($row['expires_at_ts'] ?? 0) >= $nowTs;
+        }));
+    }
+
+    private function forgotPasswordUserByEmail(string $email): ?object
+    {
+        $target = strtolower(trim($email));
+        if ($target === '') {
+            return null;
+        }
+
+        $user = DB::connection('mysql')
+            ->table('neoura.user as u')
+            ->join('neoura.employer as e', 'e.userid', '=', 'u.userid')
+            ->select('u.userid', 'u.username', 'e.email', 'e.phonenumber as employer_phone')
+            ->whereRaw('LOWER(e.email) = ?', [$target])
+            ->first();
+
+        return $user ?: null;
+    }
+
+    private function forgotPasswordUserByPhone(string $phone): ?object
+    {
+        $targetNormalized = $this->normalizeWhatsAppNumber($phone);
+        $targetDigits = preg_replace('/\D+/', '', trim($phone)) ?? '';
+        if ($targetNormalized === '' && $targetDigits === '') {
+            return null;
+        }
+
+        $users = DB::connection('mysql')
+            ->table('neoura.user as u')
+            ->join('neoura.employer as e', 'e.userid', '=', 'u.userid')
+            ->select('u.userid', 'u.username', 'e.email', 'e.phonenumber as employer_phone')
+            ->whereNotNull('e.phonenumber')
+            ->where('e.phonenumber', '!=', '')
+            ->get();
+
+        foreach ($users as $user) {
+            $rowPhone = (string) ($user->employer_phone ?? '');
+            $rowNormalized = $this->normalizeWhatsAppNumber($rowPhone);
+            $rowDigits = preg_replace('/\D+/', '', trim($rowPhone)) ?? '';
+
+            if ($targetNormalized !== '' && $rowNormalized !== '' && hash_equals($targetNormalized, $rowNormalized)) {
+                return $user;
+            }
+
+            if ($targetDigits !== '' && $rowDigits !== '') {
+                if (hash_equals($targetDigits, $rowDigits)) {
+                    return $user;
+                }
+                if (hash_equals(ltrim($targetDigits, '0'), ltrim($rowDigits, '0'))) {
+                    return $user;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function queueForgotPasswordEmailReset(int $userId, string $email): array
+    {
+        $targetEmail = trim($email);
+        if ($userId <= 0 || $targetEmail === '') {
+            return [
+                'sent' => false,
+                'reason' => 'Invalid password reset request.',
+            ];
+        }
+
+        $token = (string) Str::random(64);
+        $expiresAt = now()->addMinutes(30);
+        $resetLink = route('password.forgot.email.reset', ['token' => $token]);
+        $appName = trim((string) config('app.name', 'Neora Color Studio')) ?: 'Neora Color Studio';
+
+        $message = implode("\n", [
+            "Hello,",
+            "",
+            "We received a request to reset your {$appName} account password.",
+            "",
+            "Reset your password using this secure link:",
+            $resetLink,
+            "",
+            "This link expires at " . $expiresAt->format('d M Y H:i:s T') . ".",
+            "If you did not request this reset, you can ignore this email.",
+            "",
+            "Regards,",
+            "{$appName} Support Team",
+        ]);
+
+        $mailResult = $this->sendBookingEmail($targetEmail, 'Password Reset Request', $message);
+        if (!(bool) ($mailResult['sent'] ?? false)) {
+            return $mailResult;
+        }
+
+        $rows = $this->pruneForgotPasswordEmailRequests($this->forgotPasswordEmailRequests());
+        $rows = array_values(array_filter($rows, function ($row) use ($userId, $targetEmail) {
+            if (!is_array($row)) {
+                return false;
+            }
+
+            $sameUser = (int) ($row['userid'] ?? 0) === $userId;
+            $sameEmail = strtolower(trim((string) ($row['email'] ?? ''))) === strtolower($targetEmail);
+            return !$sameUser && !$sameEmail;
+        }));
+
+        array_unshift($rows, [
+            'token' => $token,
+            'userid' => $userId,
+            'email' => $targetEmail,
+            'created_at' => now()->toDateTimeString(),
+            'expires_at' => $expiresAt->toDateTimeString(),
+            'expires_at_ts' => $expiresAt->timestamp,
+        ]);
+
+        $this->saveForgotPasswordEmailRequests($rows);
+
+        return [
+            'sent' => true,
+            'reason' => '',
+        ];
+    }
+
+    private function forgotPasswordPhoneOtpText(string $otp): string
+    {
+        return implode("\n", [
+            "Neora Color Studio - Password Reset",
+            "",
+            "Your reset OTP code is: *{$otp}*",
+            "This code is valid for 5 minutes.",
+            "",
+            "Do not share this code with anyone.",
+        ]);
+    }
+
+    private function maskPhoneNumber(string $phone): string
+    {
+        $digits = preg_replace('/\D+/', '', trim($phone)) ?? '';
+        if ($digits === '') {
+            return 'your phone number';
+        }
+
+        $lastFour = substr($digits, -4);
+        return '******' . $lastFour;
+    }
+
+    private function grantLoginAccess(Request $request, int $seconds = 600): void
+    {
+        $request->session()->put('admin_login_access_until', time() + max(20, $seconds));
+    }
+
+    public function forgotPasswordEmail(Request $request)
+    {
+        $website = $this->websiteSettings();
+        $this->grantLoginAccess($request, 900);
+
+        $data = [
+            'title' => 'Forgot Password by Email | ' . $website['name'],
+            'website' => $website,
+            'pageScript' => 'forgot-password.js',
+        ];
+
+        $this->renderParts(['all.header', 'all.forgot-password-email', 'all.footer'], $data);
+    }
+
+    public function forgotPasswordEmailSend(Request $request)
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'email', 'max:255'],
+        ]);
+
+        $targetEmail = trim((string) ($validated['email'] ?? ''));
+        $user = $this->forgotPasswordUserByEmail($targetEmail);
+        if (!$user) {
+            return back()->with('forgot_popup_error', 'Email is not registered.')->withInput();
+        }
+
+        $result = $this->queueForgotPasswordEmailReset((int) ($user->userid ?? 0), (string) ($user->email ?? ''));
+        if (!(bool) ($result['sent'] ?? false)) {
+            return back()->withErrors([
+                'email' => 'We could not send the reset email right now. Please try again later.',
+            ])->withInput();
+        }
+
+        return redirect()->route('password.forgot.email')->with(
+            'status',
+            'A password reset link has been sent to your email.'
+        );
+    }
+
+    public function forgotPasswordEmailReset(Request $request, string $token)
+    {
+        $tokenValue = trim($token);
+        $website = $this->websiteSettings();
+        if ($tokenValue === '') {
+            return response()->view('errors.404', ['website' => $website], 404);
+        }
+
+        $rows = $this->pruneForgotPasswordEmailRequests($this->forgotPasswordEmailRequests());
+        $this->saveForgotPasswordEmailRequests($rows);
+        $target = collect($rows)->first(function ($row) use ($tokenValue) {
+            return is_array($row) && hash_equals((string) ($row['token'] ?? ''), $tokenValue);
+        });
+
+        if (!is_array($target)) {
+            return response()->view('errors.404', ['website' => $website], 404);
+        }
+
+        $this->grantLoginAccess($request, 900);
+        $data = [
+            'title' => 'Reset Password | ' . $website['name'],
+            'website' => $website,
+            'formAction' => route('password.forgot.email.reset.update', ['token' => $tokenValue]),
+            'formTitle' => 'Reset Your Password',
+            'formDescription' => 'Enter your new password for your account.',
+            'backUrl' => route('password.forgot.email'),
+            'backLabel' => 'Back to Forgot Password by Email',
+            'pageScript' => 'password-visibility.js',
+        ];
+
+        $this->renderParts(['all.header', 'all.forgot-password-reset', 'all.footer'], $data);
+    }
+
+    public function forgotPasswordEmailResetUpdate(Request $request, string $token)
+    {
+        $validated = $request->validate([
+            'new_password' => ['required', 'string', 'min:6', 'confirmed'],
+        ]);
+
+        $tokenValue = trim($token);
+        if ($tokenValue === '') {
+            return back()->withErrors(['new_password' => 'Reset token is invalid.']);
+        }
+
+        $rows = $this->pruneForgotPasswordEmailRequests($this->forgotPasswordEmailRequests());
+        $target = null;
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            if (hash_equals((string) ($row['token'] ?? ''), $tokenValue)) {
+                $target = $row;
+                break;
+            }
+        }
+
+        if (!is_array($target)) {
+            return back()->withErrors(['new_password' => 'Reset token is invalid or expired.']);
+        }
+
+        $userId = (int) ($target['userid'] ?? 0);
+        if ($userId <= 0) {
+            return back()->withErrors(['new_password' => 'Reset token is invalid.']);
+        }
+
+        DB::connection('mysql')
+            ->table('neoura.user')
+            ->where('userid', $userId)
+            ->update([
+                'password' => Hash::make((string) ($validated['new_password'] ?? '')),
+            ]);
+
+        $rows = array_values(array_filter($rows, function ($row) use ($userId) {
+            return is_array($row) && (int) ($row['userid'] ?? 0) !== $userId;
+        }));
+        $this->saveForgotPasswordEmailRequests($rows);
+
+        $this->grantLoginAccess($request, 900);
+        return redirect()->route('login')->with('status', 'Password has been reset successfully. Please log in with your new password.');
+    }
+
+    public function forgotPasswordPhone(Request $request)
+    {
+        $website = $this->websiteSettings();
+        $otpState = $request->session()->get('forgot_password_phone_otp');
+        $showOtpForm = is_array($otpState) && (int) ($otpState['expires_at'] ?? 0) >= time();
+
+        $this->grantLoginAccess($request, 900);
+        $data = [
+            'title' => 'Forgot Password by Phone | ' . $website['name'],
+            'website' => $website,
+            'showOtpForm' => $showOtpForm,
+            'otpMaskedPhone' => $showOtpForm ? $this->maskPhoneNumber((string) ($otpState['phone'] ?? '')) : '',
+            'pageScript' => 'forgot-password.js',
+        ];
+
+        $this->renderParts(['all.header', 'all.forgot-password-phone', 'all.footer'], $data);
+    }
+
+    public function forgotPasswordPhoneSendOtp(Request $request)
+    {
+        $validated = $request->validate([
+            'phonenumber' => ['required', 'string', 'max:255'],
+        ]);
+
+        $user = $this->forgotPasswordUserByPhone((string) ($validated['phonenumber'] ?? ''));
+        if (!$user) {
+            return back()->with('forgot_popup_error', 'Phone number is not registered.')->withInput();
+        }
+
+        $targetPhone = trim((string) ($user->employer_phone ?? ''));
+        if ($targetPhone === '') {
+            return back()->with('forgot_popup_error', 'Phone number is not registered.')->withInput();
+        }
+
+        $otp = (string) random_int(100000, 999999);
+        $result = $this->sendWhatsAppMessage($targetPhone, $this->forgotPasswordPhoneOtpText($otp));
+        if (!(bool) ($result['sent'] ?? false)) {
+            $reason = trim((string) ($result['reason'] ?? ''));
+            return back()->withErrors([
+                'phonenumber' => $reason !== '' ? ('Failed to send OTP: ' . $reason) : 'Failed to send OTP. Please try again.',
+            ])->withInput();
+        }
+
+        $request->session()->put('forgot_password_phone_otp', [
+            'userid' => (int) ($user->userid ?? 0),
+            'phone' => $targetPhone,
+            'otp_hash' => hash('sha256', $otp),
+            'expires_at' => time() + 300,
+            'verified' => false,
+        ]);
+        $request->session()->forget('forgot_password_phone_verified_userid');
+
+        return redirect()->route('password.forgot.phone')->with(
+            'status',
+            'OTP has been sent to your registered phone number.'
+        );
+    }
+
+    public function forgotPasswordPhoneVerifyOtp(Request $request)
+    {
+        $validated = $request->validate([
+            'otp_code' => ['required', 'regex:/^\d{6}$/'],
+        ]);
+
+        $otpState = $request->session()->get('forgot_password_phone_otp');
+        if (!is_array($otpState)) {
+            return redirect()->route('password.forgot.phone')->withErrors([
+                'otp_code' => 'OTP session not found. Please request a new OTP.',
+            ]);
+        }
+
+        if ((int) ($otpState['expires_at'] ?? 0) < time()) {
+            $request->session()->forget('forgot_password_phone_otp');
+            return redirect()->route('password.forgot.phone')->withErrors([
+                'otp_code' => 'OTP has expired. Please request a new OTP.',
+            ]);
+        }
+
+        $otpHash = hash('sha256', (string) ($validated['otp_code'] ?? ''));
+        if (!hash_equals((string) ($otpState['otp_hash'] ?? ''), $otpHash)) {
+            return redirect()->route('password.forgot.phone')->withErrors([
+                'otp_code' => 'OTP code is invalid.',
+            ]);
+        }
+
+        $otpState['verified'] = true;
+        $request->session()->put('forgot_password_phone_otp', $otpState);
+        $request->session()->put('forgot_password_phone_verified_userid', (int) ($otpState['userid'] ?? 0));
+
+        return redirect()->route('password.forgot.phone.reset');
+    }
+
+    public function forgotPasswordPhoneReset(Request $request)
+    {
+        $verifiedUserId = (int) $request->session()->get('forgot_password_phone_verified_userid', 0);
+        if ($verifiedUserId <= 0) {
+            return redirect()->route('password.forgot.phone')->withErrors([
+                'otp_code' => 'Please verify OTP first.',
+            ]);
+        }
+
+        $website = $this->websiteSettings();
+        $this->grantLoginAccess($request, 900);
+        $data = [
+            'title' => 'Reset Password | ' . $website['name'],
+            'website' => $website,
+            'formAction' => route('password.forgot.phone.reset.update'),
+            'formTitle' => 'Set a New Password',
+            'formDescription' => 'OTP verification is complete. Enter your new password.',
+            'backUrl' => route('password.forgot.phone'),
+            'backLabel' => 'Back to Forgot Password by Phone',
+            'pageScript' => 'password-visibility.js',
+        ];
+
+        $this->renderParts(['all.header', 'all.forgot-password-reset', 'all.footer'], $data);
+    }
+
+    public function forgotPasswordPhoneResetUpdate(Request $request)
+    {
+        $validated = $request->validate([
+            'new_password' => ['required', 'string', 'min:6', 'confirmed'],
+        ]);
+
+        $verifiedUserId = (int) $request->session()->get('forgot_password_phone_verified_userid', 0);
+        if ($verifiedUserId <= 0) {
+            return redirect()->route('password.forgot.phone')->withErrors([
+                'otp_code' => 'Please verify OTP first.',
+            ]);
+        }
+
+        DB::connection('mysql')
+            ->table('neoura.user')
+            ->where('userid', $verifiedUserId)
+            ->update([
+                'password' => Hash::make((string) ($validated['new_password'] ?? '')),
+            ]);
+
+        $request->session()->forget([
+            'forgot_password_phone_otp',
+            'forgot_password_phone_verified_userid',
+        ]);
+
+        $this->grantLoginAccess($request, 900);
+        return redirect()->route('login')->with('status', 'Password has been reset successfully. Please log in with your new password.');
+    }
+
+    public function login(Request $request)
+    {
+        $accessUntil = (int) $request->session()->get('admin_login_access_until', 0);
+        $website = $this->websiteSettings();
+
+        if ($accessUntil < time()) {
+            return response()->view('errors.login-denied', ['website' => $website], 403);
+        }
+
+        // One-time temporary access: consume right after login page is opened.
+        $request->session()->forget('admin_login_access_until');
+        $formToken = Str::random(40);
+        $request->session()->put('admin_login_form_token', $formToken);
+        $request->session()->put('admin_login_form_expires_at', time() + 300);
+        $data = [
+            'title' => 'Login | ' . $website['name'],
+            'loginFormToken' => $formToken,
+            'website' => $website,
+            'pageScript' => 'password-visibility.js',
+        ];
+
+        $this->renderParts(['all.header', 'all.login', 'all.footer'], $data);
+    }
+
+    public function loginSubmit(Request $request)
+    {
+        $validated = $request->validate([
+            'username' => ['required', 'string'],
+            'password' => ['required', 'string'],
+            'login_form_token' => ['required', 'string'],
+            'latitude' => ['nullable', 'numeric'],
+            'longitude' => ['nullable', 'numeric'],
+        ]);
+
+        $sessionToken = (string) $request->session()->get('admin_login_form_token', '');
+        $sessionTokenExpiresAt = (int) $request->session()->get('admin_login_form_expires_at', 0);
+
+        if (
+            empty($sessionToken) ||
+            $sessionTokenExpiresAt < time() ||
+            !hash_equals($sessionToken, $validated['login_form_token'])
+        ) {
+            $request->session()->forget(['admin_login_form_token', 'admin_login_form_expires_at']);
+
+            return response()->view('errors.login-denied', ['website' => $this->websiteSettings()], 403);
+        }
+
+        $user = DB::connection('mysql')
+            ->table('neoura.user as u')
+            ->leftJoin('neoura.employer as e', 'e.userid', '=', 'u.userid')
+            ->leftJoin('neoura.level as l', 'l.levelid', '=', 'u.levelid')
+            ->select(
+                'u.userid',
+                'u.username',
+                'u.password',
+                'u.levelid',
+                'e.employerid',
+                'e.name as employer_name',
+                'e.email as employer_email',
+                'e.phonenumber as employer_phone',
+                'l.levelname'
+            )
+            ->where('u.username', $validated['username'])
+            ->first();
+
+        if (!$user) {
+            return back()->withErrors([
+                'username' => 'Invalid username or password.',
+            ])->onlyInput('username');
+        }
+
+        $plainPassword = $validated['password'];
+        $storedPassword = (string) $user->password;
+        $passwordValid = Hash::check($plainPassword, $storedPassword) || hash_equals($storedPassword, $plainPassword);
+
+        if (!$passwordValid) {
+            return back()->withErrors([
+                'username' => 'Invalid username or password.',
+            ])->onlyInput('username');
+        }
+
+        $request->session()->forget(['admin_login_form_token', 'admin_login_form_expires_at']);
+        $request->session()->put('admin_auth', [
+            'userid' => $user->userid,
+            'username' => $user->username,
+            'levelid' => $user->levelid,
+            'levelname' => $user->levelname,
+            'employerid' => $user->employerid,
+            'employer_name' => $user->employer_name,
+            'employer_email' => $user->employer_email,
+            'employer_phone' => $user->employer_phone,
+            'logged_in_at' => now()->toDateTimeString(),
+        ]);
+
+        $request->attributes->set('activity_action_override', 'Login');
+        $request->attributes->set(
+            'activity_detail_override',
+            'User ' . trim((string) ($user->username ?? '-')) . ' logged in successfully.'
+        );
+
+        $latitude = trim((string) ($validated['latitude'] ?? ''));
+        $longitude = trim((string) ($validated['longitude'] ?? ''));
+        if ($latitude !== '' && $longitude !== '') {
+            $request->session()->put('admin_activity_coords', [
+                'latitude' => $latitude,
+                'longitude' => $longitude,
+            ]);
+        }
+
+        return redirect()->route('home')->with('status', 'Admin login successful.');
+    }
+
+    public function logout(Request $request)
+    {
+        $request->session()->forget([
+            'admin_auth',
+            'admin_logo_click_started_at',
+            'admin_logo_click_count',
+            'admin_login_access_until',
+            'admin_login_form_token',
+            'admin_login_form_expires_at',
+            'admin_activity_coords',
+            'forgot_password_phone_otp',
+            'forgot_password_phone_verified_userid',
+        ]);
+        $request->session()->regenerateToken();
+
+        return redirect()->route('home')->with('status', 'Admin logout successful.');
+    }
+
+    public function updateCarousel(Request $request)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+
+        $validated = $request->validate([
+            'carousel_autoplay_ms' => ['required', 'integer', 'min:500', 'max:60000'],
+            'slides' => ['required', 'array', 'min:1', 'max:20'],
+            'slides.*.title' => ['required', 'string', 'max:120'],
+            'slides.*.description' => ['required', 'string', 'max:500'],
+            'slides.*.existing_image' => ['nullable', 'string', 'max:255'],
+            'slides.*.image' => ['nullable', 'image', 'max:3072'],
+        ]);
+
+        $slides = [];
+        foreach (array_values($validated['slides']) as $index => $slideData) {
+            $existingPath = trim((string) ($slideData['existing_image'] ?? ''));
+            if (!Str::startsWith($existingPath, 'images/carousel/')) {
+                $existingPath = '';
+            }
+
+            $imagePath = $existingPath;
+            $file = $request->file("slides.$index.image");
+            if ($file) {
+                $directory = public_path('images/carousel');
+                if (!is_dir($directory)) {
+                    mkdir($directory, 0755, true);
+                }
+
+                $filename = 'carousel-' . ($index + 1) . '-' . time() . '-' . Str::random(8) . '.' . $file->getClientOriginalExtension();
+                $file->move($directory, $filename);
+                $imagePath = 'images/carousel/' . $filename;
+            }
+
+            $slides[] = [
+                'title' => trim((string) ($slideData['title'] ?? '')),
+                'description' => trim((string) ($slideData['description'] ?? '')),
+                'image_path' => $imagePath,
+            ];
+        }
+
+        $this->saveCarouselSlides($slides);
+        $this->saveCarouselSettings([
+            'autoplay_ms' => (int) ($validated['carousel_autoplay_ms'] ?? $this->defaultCarouselAutoplayMs()),
+        ]);
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'status' => 'ok',
+                'message' => 'Home content updated.',
+                'carousel_autoplay_ms' => (int) ($validated['carousel_autoplay_ms'] ?? $this->defaultCarouselAutoplayMs()),
+                'slides' => $this->decorateCarouselSlides($slides),
+            ]);
+        }
+
+        return redirect()->route('home')->with('status', 'Home content updated.');
+    }
+
+    public function updateAboutContent(Request $request)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+
+        $validated = $request->validate([
+            'about_title' => ['required', 'string', 'max:255'],
+            'about_description' => ['required', 'string', 'max:3000'],
+        ]);
+
+        $this->saveAboutContent([
+            'title' => $validated['about_title'],
+            'description' => $validated['about_description'],
+        ]);
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'status' => 'ok',
+                'message' => 'About Us updated.',
+                'about' => [
+                    'title' => $validated['about_title'],
+                    'description' => $validated['about_description'],
+                ],
+            ]);
+        }
+
+        return redirect()->route('home')->with('status', 'About Us updated.');
+    }
+
+    public function superAdminPermission(Request $request)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'permission')) {
+            return $this->sidebarPermissionDenied($request);
+        }
+
+        $website = $this->websiteSettings();
+        $showAdminMenu = $this->canSeeAdminMenu($adminAuth);
+        $sidebarServices = $this->sidebarServices();
+        $permissionRows = $this->sidebarPermissionMenuRows();
+        $sidebarPermissions = $this->sidebarPermissions();
+
+        $data = [
+            'title' => 'Sidebar Permission | ' . $website['name'],
+            'adminAuth' => $adminAuth,
+            'showAdminMenu' => $showAdminMenu,
+            'sidebarPermissionMap' => $this->sidebarPermissionMapForAuth($adminAuth),
+            'sidebarServices' => $sidebarServices,
+            'website' => $website,
+            'permissionRows' => $permissionRows,
+            'sidebarPermissions' => $sidebarPermissions,
+        ];
+
+        $this->renderParts(['all.header', 'all.menu', 'superadmin.permission', 'all.footer'], $data);
+    }
+
+    public function superAdminPermissionUpdate(Request $request)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'permission')) {
+            return $this->sidebarPermissionDenied($request);
+        }
+
+        $payload = $request->input('permissions', []);
+        if (!is_array($payload)) {
+            $payload = [];
+        }
+
+        $this->saveSidebarPermissions($payload);
+
+        return redirect()->route('superadmin.permission')->with('status', 'Sidebar permission updated.');
+    }
+
+    public function superAdminSetting(Request $request)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'setting')) {
+            return $this->sidebarPermissionDenied($request);
+        }
+
+        $website = $this->websiteSettings();
+        $showAdminMenu = $this->canSeeAdminMenu($adminAuth);
+        $sidebarServices = $this->sidebarServices();
+        $data = [
+            'title' => 'Setting | ' . $website['name'],
+            'adminAuth' => $adminAuth,
+            'showAdminMenu' => $showAdminMenu,
+            'sidebarPermissionMap' => $this->sidebarPermissionMapForAuth($adminAuth),
+            'sidebarServices' => $sidebarServices,
+            'website' => $website,
+            'pageScript' => 'setting.js',
+        ];
+
+        $this->renderParts(['all.header', 'all.menu', 'superadmin.setting', 'all.footer'], $data);
+    }
+
+    public function superAdminSettingUpdate(Request $request)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'setting')) {
+            return $this->sidebarPermissionDenied($request);
+        }
+
+        $validated = $request->validate([
+            'systemname' => ['required', 'string', 'max:255'],
+            'website_name_visibility_toggle' => ['nullable', 'boolean'],
+            'systemcontact' => ['nullable', 'string', 'max:255'],
+            'system_insta' => ['nullable', 'string', 'max:255'],
+            'systemaddress' => ['nullable', 'string', 'max:255'],
+            'system_theme_color_soft' => ['nullable', 'regex:/^#[0-9A-Fa-f]{6}$/'],
+            'system_theme_color_bold' => ['nullable', 'regex:/^#[0-9A-Fa-f]{6}$/'],
+            'bankname' => ['nullable', 'array'],
+            'bankname.*' => ['nullable', 'string', 'max:255'],
+            'banknumber' => ['nullable', 'array'],
+            'banknumber.*' => ['nullable', 'string', 'max:255'],
+            'systemlogo' => ['nullable', 'image', 'max:2048'],
+        ]);
+
+        $system = DB::connection('mysql')
+            ->table('neoura.system')
+            ->orderBy('systemid')
+            ->first();
+
+        $systemId = $system->systemid ?? null;
+        $logoPath = (string) ($system->systemlogo ?? 'images/neora-logo.svg');
+
+        if ($request->hasFile('systemlogo')) {
+            $file = $request->file('systemlogo');
+            $directory = public_path('images/system');
+            if (!is_dir($directory)) {
+                mkdir($directory, 0755, true);
+            }
+
+            $filename = 'logo-' . time() . '-' . Str::random(8) . '.' . $file->getClientOriginalExtension();
+            $file->move($directory, $filename);
+            $logoPath = 'images/system/' . $filename;
+        }
+
+        $systemPayload = [
+            'systemname' => $validated['systemname'],
+            'systemlogo' => $logoPath,
+            'systemcontact' => $validated['systemcontact'] ?? '',
+            'system_insta' => $validated['system_insta'] ?? '',
+            'systemaddress' => $validated['systemaddress'] ?? '',
+            'color1' => $this->normalizeHexColor(
+                $validated['system_theme_color_soft'] ?? null,
+                $this->defaultThemeSoftColor()
+            ),
+            'color2' => $this->normalizeHexColor(
+                $validated['system_theme_color_bold'] ?? null,
+                $this->defaultThemeBoldColor()
+            ),
+        ];
+
+        if ($systemId) {
+            DB::connection('mysql')->table('neoura.system')->where('systemid', $systemId)->update($systemPayload);
+        } else {
+            $systemId = DB::connection('mysql')->table('neoura.system')->insertGetId($systemPayload);
+        }
+
+        $bankNames = $validated['bankname'] ?? [];
+        $bankNumbers = $validated['banknumber'] ?? [];
+        $maxBankRows = max(count($bankNames), count($bankNumbers));
+        $bankRows = [];
+        for ($i = 0; $i < $maxBankRows; $i++) {
+            $bankName = trim((string) ($bankNames[$i] ?? ''));
+            $bankNumber = trim((string) ($bankNumbers[$i] ?? ''));
+            if ($bankName === '' && $bankNumber === '') {
+                continue;
+            }
+
+            $bankRows[] = [
+                'bankname' => $bankName,
+                'banknumber' => $bankNumber,
+                'systemid' => $systemId,
+            ];
+        }
+
+        DB::connection('mysql')->table('neoura.bank')->where('systemid', $systemId)->delete();
+        if (!empty($bankRows)) {
+            DB::connection('mysql')->table('neoura.bank')->insert($bankRows);
+        }
+
+        $this->saveBrandDisplaySettings([
+            'show_name_in_brand' => (bool) ($validated['website_name_visibility_toggle'] ?? false),
+        ]);
+
+        return redirect()->route('superadmin.setting')->with('status', 'Website settings updated.');
+    }
+
+    public function registerLogoClick(Request $request): JsonResponse
+    {
+        $now = microtime(true);
+        $windowSeconds = 2.0;
+        $requiredClicks = 5;
+
+        $startedAt = (float) $request->session()->get('admin_logo_click_started_at', 0);
+        $count = (int) $request->session()->get('admin_logo_click_count', 0);
+
+        if ($startedAt <= 0 || ($now - $startedAt) > $windowSeconds) {
+            $startedAt = $now;
+            $count = 1;
+        } else {
+            $count++;
+        }
+
+        if ($count >= $requiredClicks) {
+            $request->session()->forget(['admin_logo_click_started_at', 'admin_logo_click_count']);
+            $request->session()->put('admin_login_access_until', time() + 20);
+
+            return response()->json([
+                'unlocked' => true,
+                'redirect' => route('login'),
+            ]);
+        }
+
+        $request->session()->put('admin_logo_click_started_at', $startedAt);
+        $request->session()->put('admin_logo_click_count', $count);
+
+        return response()->json([
+            'unlocked' => false,
+            'remaining' => $requiredClicks - $count,
+        ]);
+    }
+
+    public function notFound()
+    {
+        return response()->view('errors.404', ['website' => $this->websiteSettings()], 404);
+    }
+}
