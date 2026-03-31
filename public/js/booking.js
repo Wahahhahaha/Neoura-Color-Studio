@@ -76,6 +76,11 @@
     const bankSelect = document.getElementById('payment_bank');
     const proofInput = document.getElementById('payment_proof');
     const durationMinutes = Number(form.dataset.durationMinutes || '60');
+    const msgTimeFull = form.dataset.msgTimeFull || 'Selected time is already full. Please choose another time.';
+    const msgRequired = form.dataset.msgRequired || 'Please complete all required fields before submitting.';
+    const msgInvalidEmail = form.dataset.msgInvalidEmail || 'Please enter a valid email address.';
+    const msgInvalidPhone = form.dataset.msgInvalidPhone || 'Please enter a valid phone number.';
+    const labelFull = form.dataset.labelFull || '(Full)';
     const schedule = (() => {
         try {
             return JSON.parse(form.dataset.schedule || '{}');
@@ -489,7 +494,7 @@
         const nowMinutes = (now.getHours() * 60) + now.getMinutes();
 
         options.forEach((option) => {
-            const baseLabel = option.getAttribute('data-base-label') || option.textContent.replace(' (Full)', '');
+            const baseLabel = option.getAttribute('data-base-label') || option.textContent.replace(` ${labelFull}`, '');
             option.setAttribute('data-base-label', baseLabel);
 
             const start = toMinutes(option.value);
@@ -517,7 +522,7 @@
 
             option.hidden = isPastTimeToday;
             option.disabled = unavailable || isPastTimeToday;
-            option.textContent = unavailable && !isPastTimeToday ? `${baseLabel} (Full)` : baseLabel;
+            option.textContent = unavailable && !isPastTimeToday ? `${baseLabel} ${labelFull}` : baseLabel;
         });
 
         if (oldValue && (timeSelect.selectedOptions[0]?.disabled || timeSelect.selectedOptions[0]?.hidden)) {
@@ -544,7 +549,7 @@
         const selectedOption = timeSelect.selectedOptions[0];
         if (selectedOption?.disabled) {
             event.preventDefault();
-            message.textContent = 'Selected time is already full. Please choose another time.';
+            message.textContent = msgTimeFull;
             message.className = 'form-message error';
             return;
         }
@@ -558,21 +563,21 @@
 
         if (!fullName || !email || !phone || !bookingDate || !timeSlot || !proof) {
             event.preventDefault();
-            message.textContent = 'Please complete all required fields before submitting.';
+            message.textContent = msgRequired;
             message.className = 'form-message error';
             return;
         }
 
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
             event.preventDefault();
-            message.textContent = 'Please enter a valid email address.';
+            message.textContent = msgInvalidEmail;
             message.className = 'form-message error';
             return;
         }
 
         if (!/^\+?[0-9\s-]{8,20}$/.test(phone)) {
             event.preventDefault();
-            message.textContent = 'Please enter a valid phone number.';
+            message.textContent = msgInvalidPhone;
             message.className = 'form-message error';
             return;
         }

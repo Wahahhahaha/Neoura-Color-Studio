@@ -1145,8 +1145,16 @@ class Ctrl extends Controller
         ];
     }
 
-    private function defaultAboutContent(): array
+    private function defaultAboutContent(?string $locale = null): array
     {
+        $activeLocale = strtolower(trim((string) ($locale ?? app()->getLocale())));
+        if ($activeLocale === 'id') {
+            return [
+                'title' => 'Konsultasi personal color profesional dalam suasana yang tenang dan minimalis.',
+                'description' => 'Kami fokus pada analisis yang akurat, rekomendasi yang praktis, dan pengalaman konsultasi premium. Setiap sesi disusun agar Anda percaya diri memilih warna untuk pakaian, makeup, dan aksesori.',
+            ];
+        }
+
         return [
             'title' => 'Professional personal color consultancy in a calm, minimal setting.',
             'description' => 'We focus on accurate analysis, practical recommendations, and a premium consultation experience. Every session is structured so you can confidently choose colors for clothing, makeup, and accessories.',
@@ -1155,7 +1163,9 @@ class Ctrl extends Controller
 
     private function aboutContent(): array
     {
-        $defaults = $this->defaultAboutContent();
+        $locale = strtolower(trim((string) app()->getLocale()));
+        $defaults = $this->defaultAboutContent($locale);
+        $defaultsEn = $this->defaultAboutContent('en');
         $file = storage_path('app/about-content.json');
 
         if (!is_file($file)) {
@@ -1168,8 +1178,22 @@ class Ctrl extends Controller
             return $defaults;
         }
 
-        $title = trim((string) ($decoded['title'] ?? ''));
-        $description = trim((string) ($decoded['description'] ?? ''));
+        $title = trim((string) (
+            ($locale === 'id' ? ($decoded['title_id'] ?? null) : ($decoded['title_en'] ?? null))
+                ?? ($decoded['title'] ?? '')
+        ));
+        $description = trim((string) (
+            ($locale === 'id' ? ($decoded['description_id'] ?? null) : ($decoded['description_en'] ?? null))
+                ?? ($decoded['description'] ?? '')
+        ));
+
+        if (
+            $locale === 'id'
+            && $title === $defaultsEn['title']
+            && $description === $defaultsEn['description']
+        ) {
+            return $defaults;
+        }
 
         return [
             'title' => $title !== '' ? $title : $defaults['title'],
@@ -3929,6 +3953,8 @@ class Ctrl extends Controller
         $website = $this->websiteSettings();
         $target = $this->resolveFinancialReportExportTarget($request);
         $snapshot = $this->buildFinancialSnapshot((string) $target['type'], (string) $target['period']);
+        $generatedAt = date('d M Y H:i');
+        $typeLabel = ucfirst((string) ($snapshot['type'] ?? '-'));
 
         $incomeValue = (int) ($snapshot['income'] ?? 0);
         $outcomeValue = (int) ($snapshot['outcome'] ?? 0);
@@ -3936,39 +3962,54 @@ class Ctrl extends Controller
 
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
-        $sheet->setTitle('Financial Report');
-        $sheet->mergeCells('A1:F1');
-        $sheet->setCellValue('A1', strtoupper((string) ($website['name'] ?? 'NEOURA')));
-        $sheet->mergeCells('A2:F2');
-        $sheet->setCellValue('A2', 'LAPORAN KEUANGAN');
-        $sheet->mergeCells('A3:F3');
-        $sheet->setCellValue('A3', 'Periode: ' . (string) ($snapshot['period_label'] ?? '-'));
-        $sheet->mergeCells('A4:F4');
-        $sheet->setCellValue('A4', 'Tipe Laporan: ' . ucfirst((string) ($snapshot['type'] ?? '-')));
-        $sheet->mergeCells('A5:F5');
-        $sheet->setCellValue('A5', 'Generated: ' . date('d M Y H:i'));
+        $sheet->setTitle('Financial Statement');
+        $spreadsheet->getDefaultStyle()->getFont()->setName('Calibri')->setSize(11);
 
-        $sheet->setCellValue('A7', 'RINGKASAN');
-        $sheet->mergeCells('A7:F7');
-        $sheet->setCellValue('A8', 'Keterangan');
+        $sheet->mergeCells('C1:G1');
+        $sheet->setCellValue('C1', strtoupper((string) ($website['name'] ?? 'NEOURA')));
+        $sheet->mergeCells('C2:G2');
+        $sheet->setCellValue('C2', 'FINANCIAL STATEMENT');
+        $sheet->mergeCells('C3:G3');
+        $sheet->setCellValue('C3', 'Period: ' . (string) ($snapshot['period_label'] ?? '-'));
+        $sheet->mergeCells('C4:G4');
+        $sheet->setCellValue('C4', 'Report Type: ' . $typeLabel . ' | Generated: ' . $generatedAt);
+
+        $sheet->setCellValue('A6', 'Executive Summary');
+        $sheet->mergeCells('A6:G6');
+        $sheet->setCellValue('A7', 'Metric');
+        $sheet->mergeCells('A7:D7');
+        $sheet->setCellValue('E7', 'Value');
+        $sheet->mergeCells('E7:G7');
+
+        $sheet->setCellValue('A8', 'Total Income');
         $sheet->mergeCells('A8:D8');
-        $sheet->setCellValue('E8', 'Jumlah (Rp)');
-        $sheet->mergeCells('E8:F8');
+        $sheet->setCellValue('E8', $incomeValue);
+        $sheet->mergeCells('E8:G8');
 
-        $sheet->setCellValue('A9', 'Total Income');
+        $sheet->setCellValue('A9', 'Total Outcome');
         $sheet->mergeCells('A9:D9');
-        $sheet->setCellValue('E9', $incomeValue);
-        $sheet->mergeCells('E9:F9');
+        $sheet->setCellValue('E9', $outcomeValue);
+        $sheet->mergeCells('E9:G9');
 
-        $sheet->setCellValue('A10', 'Total Outcome');
+        $sheet->setCellValue('A10', 'Result');
         $sheet->mergeCells('A10:D10');
-        $sheet->setCellValue('E10', $outcomeValue);
-        $sheet->mergeCells('E10:F10');
+        $sheet->setCellValue('E10', $finalRevenue);
+        $sheet->mergeCells('E10:G10');
 
-        $sheet->setCellValue('A11', 'Pendapatan Akhir (Income - Outcome)');
+        $sheet->setCellValue('A11', 'Result Description');
         $sheet->mergeCells('A11:D11');
-        $sheet->setCellValue('E11', $finalRevenue);
-        $sheet->mergeCells('E11:F11');
+        $sheet->setCellValue('E11', (string) ($snapshot['result_description'] ?? 'Result is calculated automatically.'));
+        $sheet->mergeCells('E11:G11');
+
+        $sheet->setCellValue('A12', 'Income Description');
+        $sheet->mergeCells('A12:D12');
+        $sheet->setCellValue('E12', (string) ($snapshot['income_description'] ?? '-'));
+        $sheet->mergeCells('E12:G12');
+
+        $sheet->setCellValue('A13', 'Outcome Description');
+        $sheet->mergeCells('A13:D13');
+        $sheet->setCellValue('E13', (string) ($snapshot['outcome_description'] ?? '-'));
+        $sheet->mergeCells('E13:G13');
 
         $logoPath = trim((string) ($website['logo_path'] ?? ''));
         $logoFilePath = $logoPath !== '' ? public_path(ltrim($logoPath, '/')) : '';
@@ -3977,79 +4018,97 @@ class Ctrl extends Controller
             $drawing->setName('Website Logo');
             $drawing->setDescription('Website Logo');
             $drawing->setPath($logoFilePath);
-            $drawing->setHeight(64);
-            $drawing->setCoordinates('F1');
+            $drawing->setHeight(58);
+            $drawing->setCoordinates('A1');
             $drawing->setWorksheet($sheet);
-            $sheet->getRowDimension(1)->setRowHeight(52);
-            $sheet->getRowDimension(2)->setRowHeight(26);
+            $sheet->getRowDimension(1)->setRowHeight(46);
+            $sheet->getRowDimension(2)->setRowHeight(24);
         }
 
-        $row = 13;
-        $sheet->setCellValue('A' . $row, 'DETAIL OUTCOME');
-        $sheet->mergeCells('A' . $row . ':F' . $row);
+        $row = 15;
+        $sheet->setCellValue('A' . $row, 'Outcome Detail');
+        $sheet->mergeCells('A' . $row . ':G' . $row);
         $row++;
+        $headerRow = $row;
         $sheet->setCellValue('A' . $row, 'No');
-        $sheet->setCellValue('B' . $row, 'Expense');
+        $sheet->setCellValue('B' . $row, 'Expense Category');
         $sheet->mergeCells('B' . $row . ':D' . $row);
-        $sheet->setCellValue('E' . $row, 'Biaya (Rp)');
-        $sheet->mergeCells('E' . $row . ':F' . $row);
+        $sheet->setCellValue('E' . $row, 'Amount (Rp)');
+        $sheet->mergeCells('E' . $row . ':G' . $row);
         $row++;
 
         $index = 1;
+        $detailStartRow = $row;
         foreach ((array) ($snapshot['outcome_detail_rows'] ?? []) as $detailRow) {
             $sheet->setCellValue('A' . $row, $index);
             $sheet->setCellValue('B' . $row, (string) ($detailRow['label'] ?? '-'));
             $sheet->mergeCells('B' . $row . ':D' . $row);
-            $sheet->setCellValue('E' . $row, (int) ($detailRow['value'] ?? 0));
-            $sheet->mergeCells('E' . $row . ':F' . $row);
-            $sheet->getStyle('A' . $row . ':F' . $row)->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
+            $detailValue = (int) ($detailRow['value'] ?? 0);
+            $sheet->setCellValue('E' . $row, $detailValue);
+            $sheet->mergeCells('E' . $row . ':G' . $row);
+            $sheet->getStyle('A' . $row . ':G' . $row)->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
             $row++;
             $index++;
         }
         if ($index === 1) {
             $sheet->setCellValue('A' . $row, '-');
-            $sheet->setCellValue('B' . $row, 'No outcome detail');
-            $sheet->mergeCells('B' . $row . ':F' . $row);
-            $sheet->getStyle('A' . $row . ':F' . $row)->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
+            $sheet->setCellValue('B' . $row, 'No outcome detail available for this period.');
+            $sheet->mergeCells('B' . $row . ':G' . $row);
+            $sheet->getStyle('A' . $row . ':G' . $row)->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
             $row++;
         }
 
+        $totalRow = $row;
         $sheet->setCellValue('A' . $row, 'TOTAL OUTCOME');
         $sheet->mergeCells('A' . $row . ':D' . $row);
         $sheet->setCellValue('E' . $row, $outcomeValue);
-        $sheet->mergeCells('E' . $row . ':F' . $row);
+        $sheet->mergeCells('E' . $row . ':G' . $row);
 
-        $sheet->getStyle('A1:F1')->getFont()->setBold(true)->setSize(16);
-        $sheet->getStyle('A2:F2')->getFont()->setBold(true)->setSize(12);
-        $sheet->getStyle('A3:F5')->getFont()->setSize(10);
-        $sheet->getStyle('A1:F5')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
-        $sheet->getStyle('A7:F7')->getFont()->setBold(true);
-        $sheet->getStyle('A7:F7')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('E9EEF5');
-        $sheet->getStyle('A8:F8')->getFont()->setBold(true);
-        $sheet->getStyle('A8:F8')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('F3F6FA');
-        $sheet->getStyle('A9:F11')->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
-        $sheet->getStyle('A11:F11')->getFont()->setBold(true);
-        $sheet->getStyle('A13:F13')->getFont()->setBold(true);
-        $sheet->getStyle('A13:F13')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('E9EEF5');
-        $sheet->getStyle('A14:F14')->getFont()->setBold(true);
-        $sheet->getStyle('A14:F14')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('F3F6FA');
-        $sheet->getStyle('A' . $row . ':F' . $row)->getFont()->setBold(true);
-        $sheet->getStyle('A' . $row . ':F' . $row)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('F9EFE8');
-        $sheet->getStyle('A' . $row . ':F' . $row)->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
+        $footerRow = $row + 2;
+        $sheet->mergeCells('A' . $footerRow . ':G' . $footerRow);
+        $sheet->setCellValue('A' . $footerRow, 'Prepared by system on ' . $generatedAt . '. Values are stated in Indonesian Rupiah (IDR).');
 
-        $currencyFormat = '"Rp" #,##0';
-        $sheet->getStyle('E9:F11')->getNumberFormat()->setFormatCode($currencyFormat);
-        $sheet->getStyle('E15:F' . $row)->getNumberFormat()->setFormatCode($currencyFormat);
-        $sheet->getStyle('E8:F' . $row)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
-        $sheet->getStyle('A14:A' . $row)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-        $sheet->getStyle('A8:F' . $row)->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
+        $sheet->getStyle('C1:G1')->getFont()->setBold(true)->setSize(18);
+        $sheet->getStyle('C2:G2')->getFont()->setBold(true)->setSize(12);
+        $sheet->getStyle('C3:G4')->getFont()->setSize(10)->getColor()->setRGB('4B5563');
+        $sheet->getStyle('C1:G4')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+        $sheet->getStyle('C1:G4')->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
+        $sheet->getStyle('C1:G1')->getAlignment()->setWrapText(true);
 
-        $sheet->getColumnDimension('A')->setWidth(7);
-        $sheet->getColumnDimension('B')->setWidth(22);
+        $sheet->getStyle('A6:G6')->getFont()->setBold(true)->setSize(11);
+        $sheet->getStyle('A6:G6')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('E8EEF7');
+        $sheet->getStyle('A7:G7')->getFont()->setBold(true);
+        $sheet->getStyle('A7:G7')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('F5F8FC');
+        $sheet->getStyle('A8:G13')->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
+        $sheet->getStyle('A10:G11')->getFont()->setBold(true);
+        $sheet->getStyle('A12:A13')->getFont()->setBold(true);
+
+        $sheet->getStyle('A15:G15')->getFont()->setBold(true)->setSize(11);
+        $sheet->getStyle('A15:G15')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('E8EEF7');
+        $sheet->getStyle('A' . $headerRow . ':G' . $headerRow)->getFont()->setBold(true);
+        $sheet->getStyle('A' . $headerRow . ':G' . $headerRow)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('F5F8FC');
+        $sheet->getStyle('A' . $totalRow . ':G' . $totalRow)->getFont()->setBold(true);
+        $sheet->getStyle('A' . $totalRow . ':G' . $totalRow)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('EDF7ED');
+        $sheet->getStyle('A' . $totalRow . ':G' . $totalRow)->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
+
+        $currencyFormat = '"Rp" #,##0;[Red]-"Rp" #,##0';
+        $sheet->getStyle('E8:G10')->getNumberFormat()->setFormatCode($currencyFormat);
+        $sheet->getStyle('E' . $detailStartRow . ':G' . $totalRow)->getNumberFormat()->setFormatCode($currencyFormat);
+        $sheet->getStyle('E8:G' . $totalRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+        $sheet->getStyle('E12:G13')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT)->setWrapText(true);
+        $sheet->getStyle('A' . $headerRow . ':A' . $totalRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle('A7:G' . $totalRow)->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
+        $sheet->getStyle('A' . $footerRow . ':G' . $footerRow)->getFont()->setItalic(true)->getColor()->setRGB('6B7280');
+
+        $sheet->getColumnDimension('A')->setWidth(11);
+        $sheet->getColumnDimension('B')->setWidth(13);
         $sheet->getColumnDimension('C')->setWidth(18);
         $sheet->getColumnDimension('D')->setWidth(18);
-        $sheet->getColumnDimension('E')->setWidth(18);
-        $sheet->getColumnDimension('F')->setWidth(16);
+        $sheet->getColumnDimension('E')->setWidth(16);
+        $sheet->getColumnDimension('F')->setWidth(14);
+        $sheet->getColumnDimension('G')->setWidth(13);
+        $sheet->freezePane('A' . ($headerRow + 1));
+        $sheet->setAutoFilter('A' . $headerRow . ':F' . $totalRow);
 
         $filePath = tempnam(sys_get_temp_dir(), 'financial_report_');
         (new Xlsx($spreadsheet))->save($filePath);
@@ -4080,6 +4139,8 @@ class Ctrl extends Controller
         return view('admin.financial-report-print', [
             'website' => $website,
             'snapshot' => $snapshot,
+            'generatedAt' => date('d M Y H:i'),
+            'typeLabel' => ucfirst((string) ($snapshot['type'] ?? '-')),
         ]);
     }
 
@@ -4101,49 +4162,89 @@ class Ctrl extends Controller
         $website = $this->websiteSettings();
         $target = $this->resolveFinancialReportExportTarget($request);
         $snapshot = $this->buildFinancialSnapshot((string) $target['type'], (string) $target['period']);
-
+        $generatedAt = date('d M Y H:i');
+        $typeLabel = ucfirst((string) ($snapshot['type'] ?? '-'));
         $pdf = new \TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
         $pdf->SetCreator((string) ($website['name'] ?? 'Neoura'));
         $pdf->SetAuthor((string) ($website['name'] ?? 'Neoura'));
-        $pdf->SetTitle('Financial Report');
-        $pdf->SetMargins(12, 12, 12);
-        $pdf->SetAutoPageBreak(true, 12);
+        $pdf->SetTitle('Financial Statement');
+        $pdf->SetMargins(10, 10, 10);
+        $pdf->SetAutoPageBreak(true, 10);
         $pdf->AddPage();
         $pdf->SetFont('helvetica', '', 10);
 
         $logoHtml = '';
-        $logoUrl = trim((string) ($website['logo_url'] ?? ''));
-        if ($logoUrl !== '') {
-            $logoHtml = '<img src="' . e($logoUrl) . '" style="height:38px;" />';
+        $logoPath = trim((string) ($website['logo_path'] ?? ''));
+        $logoFilePath = $logoPath !== '' ? public_path(ltrim($logoPath, '/')) : '';
+        if ($logoFilePath !== '' && is_file($logoFilePath) && is_readable($logoFilePath)) {
+            $rawLogo = @file_get_contents($logoFilePath);
+            if ($rawLogo !== false && $rawLogo !== '') {
+                $ext = strtolower((string) pathinfo($logoFilePath, PATHINFO_EXTENSION));
+                $mime = match ($ext) {
+                    'png' => 'image/png',
+                    'jpg', 'jpeg' => 'image/jpeg',
+                    'gif' => 'image/gif',
+                    'webp' => 'image/webp',
+                    'svg' => 'image/svg+xml',
+                    default => 'image/png',
+                };
+                $logoHtml = '<img src="data:' . $mime . ';base64,' . base64_encode($rawLogo) . '" style="max-height:42px; max-width:170px;" />';
+            }
+        } else {
+            $logoUrl = trim((string) ($website['logo_url'] ?? ''));
+            if ($logoUrl !== '') {
+                $logoHtml = '<img src="' . e($logoUrl) . '" style="max-height:42px; max-width:170px;" />';
+            }
         }
 
         $outcomeRowsHtml = '';
+        $index = 1;
         foreach ((array) ($snapshot['outcome_detail_rows'] ?? []) as $detailRow) {
+            $rowBg = $index % 2 === 0 ? '#FAFAFA' : '#FFFFFF';
             $outcomeRowsHtml .= '<tr>'
-                . '<td style="border:1px solid #cccccc; padding:6px;">' . e((string) ($detailRow['label'] ?? '-')) . '</td>'
-                . '<td style="border:1px solid #cccccc; padding:6px; text-align:right;">' . e((string) ($detailRow['value_label'] ?? 'Rp 0')) . '</td>'
+                . '<td style="background:' . $rowBg . '; border:1px solid #D1D5DB; padding:7px; text-align:center;">' . $index . '</td>'
+                . '<td style="background:' . $rowBg . '; border:1px solid #D1D5DB; padding:7px;">' . e((string) ($detailRow['label'] ?? '-')) . '</td>'
+                . '<td style="background:' . $rowBg . '; border:1px solid #D1D5DB; padding:7px; text-align:right;">' . e((string) ($detailRow['value_label'] ?? 'Rp 0')) . '</td>'
                 . '</tr>';
+            $index++;
         }
         if ($outcomeRowsHtml === '') {
-            $outcomeRowsHtml = '<tr><td colspan="2" style="border:1px solid #cccccc; padding:6px;">No outcome detail.</td></tr>';
+            $outcomeRowsHtml = '<tr><td colspan="3" style="border:1px solid #D1D5DB; padding:7px;">No outcome detail available for this period.</td></tr>';
         }
+        $outcomeRowsHtml .= '<tr>'
+            . '<td colspan="2" style="background:#EEF6EE; border:1px solid #D1D5DB; padding:7px; font-weight:bold;">TOTAL OUTCOME</td>'
+            . '<td style="background:#EEF6EE; border:1px solid #D1D5DB; padding:7px; text-align:right; font-weight:bold;">' . e((string) ($snapshot['outcome_label'] ?? 'Rp 0')) . '</td>'
+            . '</tr>';
 
         $html = ''
-            . '<table cellspacing="0" cellpadding="0" width="100%"><tr>'
-            . '<td width="18%">' . $logoHtml . '</td>'
-            . '<td width="82%" style="text-align:right;"><h2 style="margin:0;">' . e((string) ($website['name'] ?? 'Neoura')) . '</h2><span>Financial Report</span></td>'
+            . '<table cellspacing="0" cellpadding="0" width="100%" style="border:1px solid #D8DEE8;">'
+            . '<tr style="background-color:#F3F6FB;">'
+            . '<td width="26%" style="padding:12px; border-right:1px solid #D8DEE8; text-align:center; vertical-align:middle;">' . ($logoHtml !== '' ? $logoHtml : '<span style="font-size:10px; color:#9CA3AF;">No Logo</span>') . '</td>'
+            . '<td width="74%" style="padding:12px; vertical-align:middle;">'
+            . '<h2 style="margin:0 0 4px 0; font-size:18px; color:#0F172A;">' . e((string) ($website['name'] ?? 'Neoura')) . '</h2>'
+            . '<div style="font-size:11px; color:#475569;">Financial Statement</div>'
+            . '<div style="font-size:10px; color:#6B7280; margin-top:4px;">Generated at ' . e($generatedAt) . '</div>'
+            . '</td>'
             . '</tr></table>'
-            . '<p style="margin-top:10px;">Type: ' . e(ucfirst((string) ($snapshot['type'] ?? '-'))) . ' | Period: ' . e((string) ($snapshot['period_label'] ?? '-')) . '</p>'
-            . '<table cellspacing="0" cellpadding="0" width="100%">'
-            . '<tr><td style="border:1px solid #cccccc; padding:6px;">Income</td><td style="border:1px solid #cccccc; padding:6px; text-align:right;">' . e((string) ($snapshot['income_label'] ?? 'Rp 0')) . '</td></tr>'
-            . '<tr><td style="border:1px solid #cccccc; padding:6px;">Outcome</td><td style="border:1px solid #cccccc; padding:6px; text-align:right;">' . e((string) ($snapshot['outcome_label'] ?? 'Rp 0')) . '</td></tr>'
-            . '<tr><td style="border:1px solid #cccccc; padding:6px;">Net</td><td style="border:1px solid #cccccc; padding:6px; text-align:right;">' . e((string) ($snapshot['net_label'] ?? 'Rp 0')) . '</td></tr>'
+            . '<table cellspacing="0" cellpadding="0" width="100%" style="margin-top:9px; border:1px solid #D8DEE8;">'
+            . '<tr><td width="22%" style="padding:7px 9px; color:#475569; border-right:1px solid #D8DEE8; background:#FAFBFD;">Report Type</td><td width="78%" style="padding:7px 9px;">' . e($typeLabel) . '</td></tr>'
+            . '<tr><td width="22%" style="padding:7px 9px; color:#475569; border-top:1px solid #D8DEE8; border-right:1px solid #D8DEE8; background:#FAFBFD;">Period</td><td width="78%" style="padding:7px 9px; border-top:1px solid #D8DEE8;">' . e((string) ($snapshot['period_label'] ?? '-')) . '</td></tr>'
             . '</table>'
-            . '<br><h3 style="margin-bottom:8px;">Outcome Detail</h3>'
+            . '<table cellspacing="0" cellpadding="0" width="100%" style="margin-top:9px;">'
+            . '<tr style="background-color:#E9EEF9;"><td style="border:1px solid #D1D5DB; padding:7px; width:65%; font-weight:bold;">Executive Summary</td><td style="border:1px solid #D1D5DB; padding:7px; text-align:right; width:35%; font-weight:bold;">Amount</td></tr>'
+            . '<tr><td style="border:1px solid #D1D5DB; padding:7px;">Total Income</td><td style="border:1px solid #D1D5DB; padding:7px; text-align:right;">' . e((string) ($snapshot['income_label'] ?? 'Rp 0')) . '</td></tr>'
+            . '<tr><td style="border:1px solid #D1D5DB; padding:7px; background:#FAFAFA;">Income Description</td><td style="border:1px solid #D1D5DB; padding:7px; text-align:left; background:#FAFAFA;">' . e((string) ($snapshot['income_description'] ?? '-')) . '</td></tr>'
+            . '<tr><td style="border:1px solid #D1D5DB; padding:7px;">Total Outcome</td><td style="border:1px solid #D1D5DB; padding:7px; text-align:right;">' . e((string) ($snapshot['outcome_label'] ?? 'Rp 0')) . '</td></tr>'
+            . '<tr><td style="border:1px solid #D1D5DB; padding:7px; background:#FAFAFA;">Outcome Description</td><td style="border:1px solid #D1D5DB; padding:7px; text-align:left; background:#FAFAFA;">' . e((string) ($snapshot['outcome_description'] ?? '-')) . '</td></tr>'
+            . '<tr><td style="border:1px solid #D1D5DB; padding:7px; font-weight:bold; background:#EEF6EE;">Result</td><td style="border:1px solid #D1D5DB; padding:7px; text-align:right; font-weight:bold; background:#EEF6EE;">' . e((string) ($snapshot['net_label'] ?? 'Rp 0')) . '</td></tr>'
+            . '</table>'
+            . '<h3 style="margin:11px 0 6px; font-size:12px; color:#0F172A;">Outcome Detail</h3>'
             . '<table cellspacing="0" cellpadding="0" width="100%"><thead><tr>'
-            . '<th style="border:1px solid #cccccc; padding:6px; background:#f5f5f5; text-align:left;">Item</th>'
-            . '<th style="border:1px solid #cccccc; padding:6px; background:#f5f5f5; text-align:right;">Cost</th>'
-            . '</tr></thead><tbody>' . $outcomeRowsHtml . '</tbody></table>';
+            . '<th style="border:1px solid #D1D5DB; padding:7px; background:#F3F6FB; text-align:center; width:10%;">No</th>'
+            . '<th style="border:1px solid #D1D5DB; padding:7px; background:#F3F6FB; text-align:left; width:60%;">Expense Category</th>'
+            . '<th style="border:1px solid #D1D5DB; padding:7px; background:#F3F6FB; text-align:right; width:30%;">Amount (Rp)</th>'
+            . '</tr></thead><tbody>' . $outcomeRowsHtml . '</tbody></table>'
+            . '<p style="font-size:9px; color:#6B7280; margin-top:7px;">This document is system-generated and all values are presented in Indonesian Rupiah (IDR).</p>';
 
         $pdf->writeHTML($html, true, false, true, false, '');
         $binary = $pdf->Output('financial-report.pdf', 'S');
@@ -4202,6 +4303,7 @@ class Ctrl extends Controller
 
         $incomeEntries = $this->approvedPaymentIncomeEntries();
         $income = 0;
+        $incomeTransactions = 0;
         $outcome = 0;
         $outcomeDetailRows = [];
         $periodLabel = $period;
@@ -4218,6 +4320,7 @@ class Ctrl extends Controller
                 $entryDate = (string) ($entry['payment_date'] ?? '');
                 if (substr($entryDate, 0, 4) === $period) {
                     $income += (int) ($entry['amount'] ?? 0);
+                    $incomeTransactions++;
                 }
             }
 
@@ -4247,6 +4350,7 @@ class Ctrl extends Controller
                 $entryDate = (string) ($entry['payment_date'] ?? '');
                 if (substr($entryDate, 0, 7) === $period) {
                     $income += (int) ($entry['amount'] ?? 0);
+                    $incomeTransactions++;
                 }
             }
 
@@ -4277,6 +4381,7 @@ class Ctrl extends Controller
             foreach ($incomeEntries as $entry) {
                 if ((string) ($entry['payment_date'] ?? '') === $period) {
                     $income += (int) ($entry['amount'] ?? 0);
+                    $incomeTransactions++;
                 }
             }
 
@@ -4294,6 +4399,26 @@ class Ctrl extends Controller
         }
 
         $net = $income - $outcome;
+        $expenseItemCount = count($outcomeDetailRows);
+        $incomeDescription = sprintf(
+            'Accumulated from %d approved payment transaction(s) for %s period (%s).',
+            $incomeTransactions,
+            $periodLabel,
+            ucfirst($normalizedType)
+        );
+        $outcomeDescription = $expenseItemCount > 0
+            ? sprintf(
+                'Accumulated operational outcome from %d expense item(s) allocated in %s.',
+                $expenseItemCount,
+                $periodLabel
+            )
+            : sprintf('No expense item recorded for %s.', $periodLabel);
+        $resultDescription = sprintf(
+            'Result is calculated from %s - %s = %s.',
+            $this->formatRupiah($income),
+            $this->formatRupiah($outcome),
+            $this->formatRupiah($net)
+        );
 
         return [
             'type' => $normalizedType,
@@ -4305,6 +4430,9 @@ class Ctrl extends Controller
             'outcome_label' => $this->formatRupiah($outcome),
             'net' => $net,
             'net_label' => $this->formatRupiah($net),
+            'income_description' => $incomeDescription,
+            'outcome_description' => $outcomeDescription,
+            'result_description' => $resultDescription,
             'outcome_detail_rows' => $outcomeDetailRows,
         ];
     }
@@ -5522,6 +5650,8 @@ class Ctrl extends Controller
     {
         $accessUntil = (int) $request->session()->get('admin_login_access_until', 0);
         $website = $this->websiteSettings();
+        $failedLoginAttempts = max(0, (int) $request->session()->get('admin_login_failed_attempts', 0));
+        $requireCaptcha = $failedLoginAttempts >= 3;
 
         if ($accessUntil < time()) {
             return response()->view('errors.login-denied', ['website' => $website], 403);
@@ -5535,12 +5665,17 @@ class Ctrl extends Controller
         $offlineAnswer = $offlineLeft + $offlineRight;
         $request->session()->put('admin_login_form_token', $formToken);
         $request->session()->put('admin_login_form_expires_at', time() + 300);
-        $request->session()->put('admin_login_offline_captcha_answer', $offlineAnswer);
+        if ($requireCaptcha) {
+            $request->session()->put('admin_login_offline_captcha_answer', $offlineAnswer);
+        } else {
+            $request->session()->forget('admin_login_offline_captcha_answer');
+        }
         $data = [
             'title' => 'Login | ' . $website['name'],
             'loginFormToken' => $formToken,
             'recaptchaSiteKey' => trim((string) env('RECAPTCHA_SITE_KEY', '')),
             'offlineCaptchaQuestion' => $offlineLeft . ' + ' . $offlineRight . ' = ?',
+            'requireCaptcha' => $requireCaptcha,
             'website' => $website,
             'pageScript' => 'password-visibility.js',
         ];
@@ -5550,16 +5685,31 @@ class Ctrl extends Controller
 
     public function loginSubmit(Request $request)
     {
-        $validated = $request->validate([
+        $failedLoginAttempts = max(0, (int) $request->session()->get('admin_login_failed_attempts', 0));
+        $requireCaptcha = $failedLoginAttempts >= 3;
+        $redirectLoginError = function (array $errors, array $inputKeys = ['username'], ?string $popupMessage = null) use ($request) {
+            $this->grantLoginAccess($request, 900);
+            $response = back()->withErrors($errors)->withInput($request->only($inputKeys));
+            if ($popupMessage !== null && trim($popupMessage) !== '') {
+                $response = $response->with('login_popup_error', $popupMessage);
+            }
+
+            return $response;
+        };
+
+        $validationRules = [
             'username' => ['required', 'string'],
             'password' => ['required', 'string'],
             'login_form_token' => ['required', 'string'],
             'latitude' => ['nullable', 'numeric'],
             'longitude' => ['nullable', 'numeric'],
-            'captcha_mode' => ['required', 'string', 'in:online,offline'],
-            'g-recaptcha-response' => ['nullable', 'string'],
-            'offline_captcha_answer' => ['nullable', 'string', 'max:20'],
-        ]);
+        ];
+        if ($requireCaptcha) {
+            $validationRules['captcha_mode'] = ['required', 'string', 'in:online,offline'];
+            $validationRules['g-recaptcha-response'] = ['nullable', 'string'];
+            $validationRules['offline_captcha_answer'] = ['nullable', 'string', 'max:20'];
+        }
+        $validated = $request->validate($validationRules);
 
         $sessionToken = (string) $request->session()->get('admin_login_form_token', '');
         $sessionTokenExpiresAt = (int) $request->session()->get('admin_login_form_expires_at', 0);
@@ -5570,57 +5720,63 @@ class Ctrl extends Controller
             !hash_equals($sessionToken, $validated['login_form_token'])
         ) {
             $request->session()->forget(['admin_login_form_token', 'admin_login_form_expires_at']);
+            $this->grantLoginAccess($request, 900);
 
-            return response()->view('errors.login-denied', ['website' => $this->websiteSettings()], 403);
+            return redirect()->route('login')
+                ->withErrors(['login' => 'Login session expired. Please try again.'])
+                ->with('login_popup_error', 'Login session expired. Please try again.')
+                ->withInput($request->only('username'));
         }
 
-        $captchaMode = strtolower(trim((string) ($validated['captcha_mode'] ?? 'offline')));
-        if ($captchaMode === 'online') {
-            $recaptchaSecret = trim((string) env('RECAPTCHA_SECRET_KEY', ''));
-            $recaptchaResponse = trim((string) ($validated['g-recaptcha-response'] ?? ''));
-            if ($recaptchaSecret === '') {
-                return back()->withErrors([
-                    'captcha' => 'Online captcha is not configured. Please contact administrator.',
-                ])->withInput($request->only('username', 'captcha_mode'));
-            }
-            if ($recaptchaResponse === '') {
-                return back()->withErrors([
-                    'captcha' => 'Please verify online captcha first.',
-                ])->withInput($request->only('username', 'captcha_mode'));
-            }
-
-            try {
-                $captchaVerifyResponse = Http::asForm()
-                    ->timeout(10)
-                    ->post('https://www.google.com/recaptcha/api/siteverify', [
-                        'secret' => $recaptchaSecret,
-                        'response' => $recaptchaResponse,
-                        'remoteip' => (string) $request->ip(),
-                    ]);
-
-                $captchaPayload = $captchaVerifyResponse->json();
-                if (!$captchaVerifyResponse->ok() || !is_array($captchaPayload) || !((bool) ($captchaPayload['success'] ?? false))) {
-                    return back()->withErrors([
-                        'captcha' => 'Online captcha verification failed.',
-                    ])->withInput($request->only('username', 'captcha_mode'));
+        if ($requireCaptcha) {
+            $captchaMode = strtolower(trim((string) ($validated['captcha_mode'] ?? 'offline')));
+            if ($captchaMode === 'online') {
+                $recaptchaSecret = trim((string) env('RECAPTCHA_SECRET_KEY', ''));
+                $recaptchaResponse = trim((string) ($validated['g-recaptcha-response'] ?? ''));
+                if ($recaptchaSecret === '') {
+                    return $redirectLoginError([
+                        'captcha' => 'Online captcha is not configured. Please contact administrator.',
+                    ], ['username', 'captcha_mode'], 'Online captcha is not configured. Please contact administrator.');
                 }
-            } catch (\Throwable $e) {
-                return back()->withErrors([
-                    'captcha' => 'Unable to verify online captcha. Please try again.',
-                ])->withInput($request->only('username', 'captcha_mode'));
-            }
-        } else {
-            $expectedOfflineAnswer = (int) $request->session()->get('admin_login_offline_captcha_answer', -1);
-            $offlineAnswerRaw = trim((string) ($validated['offline_captcha_answer'] ?? ''));
-            if ($expectedOfflineAnswer < 0) {
-                return back()->withErrors([
-                    'captcha' => 'Offline captcha session expired. Please reload login page.',
-                ])->withInput($request->only('username', 'captcha_mode'));
-            }
-            if (!preg_match('/^-?\d+$/', $offlineAnswerRaw) || (int) $offlineAnswerRaw !== $expectedOfflineAnswer) {
-                return back()->withErrors([
-                    'captcha' => 'Offline captcha answer is incorrect.',
-                ])->withInput($request->only('username', 'captcha_mode', 'offline_captcha_answer'));
+                if ($recaptchaResponse === '') {
+                    return $redirectLoginError([
+                        'captcha' => 'Please verify online captcha first.',
+                    ], ['username', 'captcha_mode'], 'Please verify online captcha first.');
+                }
+
+                try {
+                    $captchaVerifyResponse = Http::asForm()
+                        ->timeout(10)
+                        ->post('https://www.google.com/recaptcha/api/siteverify', [
+                            'secret' => $recaptchaSecret,
+                            'response' => $recaptchaResponse,
+                            'remoteip' => (string) $request->ip(),
+                        ]);
+
+                    $captchaPayload = $captchaVerifyResponse->json();
+                    if (!$captchaVerifyResponse->ok() || !is_array($captchaPayload) || !((bool) ($captchaPayload['success'] ?? false))) {
+                        return $redirectLoginError([
+                            'captcha' => 'Online captcha verification failed.',
+                        ], ['username', 'captcha_mode'], 'Online captcha verification failed.');
+                    }
+                } catch (\Throwable $e) {
+                    return $redirectLoginError([
+                        'captcha' => 'Unable to verify online captcha. Please try again.',
+                    ], ['username', 'captcha_mode'], 'Unable to verify online captcha. Please try again.');
+                }
+            } else {
+                $expectedOfflineAnswer = (int) $request->session()->get('admin_login_offline_captcha_answer', -1);
+                $offlineAnswerRaw = trim((string) ($validated['offline_captcha_answer'] ?? ''));
+                if ($expectedOfflineAnswer < 0) {
+                    return $redirectLoginError([
+                        'captcha' => 'Offline captcha session expired. Please reload login page.',
+                    ], ['username', 'captcha_mode'], 'Offline captcha session expired. Please reload login page.');
+                }
+                if (!preg_match('/^-?\d+$/', $offlineAnswerRaw) || (int) $offlineAnswerRaw !== $expectedOfflineAnswer) {
+                    return $redirectLoginError([
+                        'captcha' => 'Offline captcha answer is incorrect.',
+                    ], ['username', 'captcha_mode', 'offline_captcha_answer'], 'Offline captcha answer is incorrect.');
+                }
             }
         }
 
@@ -5643,9 +5799,10 @@ class Ctrl extends Controller
             ->first();
 
         if (!$user) {
-            return back()->withErrors([
-                'username' => 'Invalid username or password.',
-            ])->onlyInput('username');
+            $request->session()->put('admin_login_failed_attempts', $failedLoginAttempts + 1);
+            return $redirectLoginError([
+                'username' => 'Username not found.',
+            ], ['username'], 'Username not found.');
         }
 
         $plainPassword = $validated['password'];
@@ -5653,12 +5810,14 @@ class Ctrl extends Controller
         $passwordValid = Hash::check($plainPassword, $storedPassword) || hash_equals($storedPassword, $plainPassword);
 
         if (!$passwordValid) {
-            return back()->withErrors([
-                'username' => 'Invalid username or password.',
-            ])->onlyInput('username');
+            $request->session()->put('admin_login_failed_attempts', $failedLoginAttempts + 1);
+            return $redirectLoginError([
+                'password' => 'Incorrect password.',
+            ], ['username'], 'Incorrect password.');
         }
 
         $request->session()->forget([
+            'admin_login_failed_attempts',
             'admin_login_form_token',
             'admin_login_form_expires_at',
             'admin_login_offline_captcha_answer',

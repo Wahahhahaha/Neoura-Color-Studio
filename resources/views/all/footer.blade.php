@@ -1,6 +1,6 @@
 ﻿<footer class="site-footer">
     <div class="container">
-        <p>&copy; {{ date('Y') }} Neora Color Studio. All rights reserved.</p>
+        <p>&copy; {{ date('Y') }} Neora Color Studio. {{ __('ui.footer.copyright') }}</p>
     </div>
 </footer>
 <script src="{{ asset('js/main.js') }}" defer></script>

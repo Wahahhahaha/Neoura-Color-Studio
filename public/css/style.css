@@ -79,6 +79,35 @@ img {
     backdrop-filter: blur(8px);
 }
 
+.lang-switcher {
+    position: fixed;
+    top: 14px;
+    right: 20px;
+    z-index: 1100;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 34px;
+    padding: 6px 10px;
+    border: 1px solid color-mix(in srgb, var(--accent-soft) 55%, #d8d8d8 45%);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(6px);
+    font-size: 12px;
+    color: #5f5650;
+}
+
+.lang-switcher a {
+    font-weight: 700;
+    padding: 2px 4px;
+    border-radius: 6px;
+}
+
+.lang-switcher a.is-active {
+    background: color-mix(in srgb, var(--accent-soft) 34%, #ffffff 66%);
+    color: #2f2a26;
+}
+
 .nav-wrap {
     min-height: 74px;
     display: flex;
@@ -1628,6 +1657,48 @@ img {
 }
 
 .forgot-popup-dialog .account-email-notice-footer {
+    justify-content: center;
+}
+
+.crop-modal-dialog.login-popup-dialog {
+    width: min(440px, 92vw);
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    margin: 0;
+    transform: translate(-50%, -48%) scale(0.985);
+    opacity: 0;
+    transition: opacity 0.26s ease, transform 0.26s ease;
+}
+
+.login-popup-modal .crop-modal-backdrop {
+    opacity: 0;
+    transition: opacity 0.26s ease;
+}
+
+.login-popup-modal.is-enter .crop-modal-backdrop {
+    opacity: 1;
+}
+
+.login-popup-modal.is-enter .login-popup-dialog {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+}
+
+.login-popup-modal.is-leave .crop-modal-backdrop {
+    opacity: 0;
+}
+
+.login-popup-modal.is-leave .login-popup-dialog {
+    opacity: 0;
+    transform: translate(-50%, -48%) scale(0.985);
+}
+
+.login-popup-dialog .account-email-notice-text {
+    text-align: center;
+}
+
+.login-popup-dialog .account-email-notice-footer {
     justify-content: center;
 }
 
@@ -3524,6 +3595,13 @@ img {
 }
 
 @media (max-width: 760px) {
+    .lang-switcher {
+        top: 12px;
+        right: 12px;
+        font-size: 11px;
+        padding: 5px 8px;
+    }
+
     .nav-toggle {
         display: inline-block;
     }

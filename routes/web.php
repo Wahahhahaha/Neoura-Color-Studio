@@ -3,6 +3,17 @@
 use App\Http\Controllers\Ctrl;
 use Illuminate\Support\Facades\Route;
 
+Route::get('/lang/{locale}', function (string $locale) {
+    $normalized = strtolower(trim($locale));
+    if (!in_array($normalized, ['en', 'id'], true)) {
+        $normalized = config('app.locale', 'en');
+    }
+
+    session(['locale' => $normalized]);
+
+    return redirect()->back();
+})->name('lang.switch');
+
 Route::get('/', [Ctrl::class, 'home'])->name('home');
 Route::get('/service/basic-session', [Ctrl::class, 'basicSession'])->name('service.basic');
 Route::get('/service/exclusive-session', [Ctrl::class, 'exclusiveSession'])->name('service.exclusive');

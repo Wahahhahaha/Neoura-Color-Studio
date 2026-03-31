@@ -16,7 +16,7 @@
                         @endif
 
                         <div class="slide-stack-card">
-                            <p class="eyebrow">Color Notes</p>
+                            <p class="eyebrow">{{ __('ui.home.color_notes') }}</p>
                             <h2>{{ $slide['title'] ?? '' }}</h2>
                             <p>{{ $slide['description'] ?? '' }}</p>
                         </div>
@@ -162,9 +162,9 @@
         <div class="container split fade-in">
             <div>
                 <div class="about-head-actions">
-                    <p class="eyebrow">About Us</p>
+                    <p class="eyebrow">{{ __('ui.about.heading') }}</p>
                     @if (!empty($showAdminMenu))
-                        <button type="button" class="about-edit-btn" data-open-about-editor aria-label="Edit About Us">
+                        <button type="button" class="about-edit-btn" data-open-about-editor aria-label="{{ __('ui.about.edit_aria') }}">
                             <svg viewBox="0 0 24 24" class="admin-icon" aria-hidden="true"><path d="M4 20h4l10-10-4-4L4 16v4zm12-12 2 2"/></svg>
                         </button>
                     @endif
@@ -178,25 +178,25 @@
     @if (!empty($showAdminMenu))
         <div class="crop-modal about-editor-modal" data-about-editor-modal hidden>
             <div class="crop-modal-backdrop" data-close-about-editor></div>
-            <div class="crop-modal-dialog about-editor-dialog" role="dialog" aria-modal="true" aria-label="Edit About Us">
+            <div class="crop-modal-dialog about-editor-dialog" role="dialog" aria-modal="true" aria-label="{{ __('ui.about.edit_aria') }}">
                 <div class="crop-modal-head">
-                    <h2>Edit About Us</h2>
-                    <button type="button" class="crop-close" data-close-about-editor aria-label="Close about editor">x</button>
+                    <h2>{{ __('ui.about.edit_title') }}</h2>
+                    <button type="button" class="crop-close" data-close-about-editor aria-label="{{ __('ui.about.close_edit_aria') }}">x</button>
                 </div>
 
                 <form method="post" action="{{ route('about.update') }}" class="service-modal-form" data-about-editor-form>
                     @csrf
                     <p class="carousel-editor-feedback" data-about-editor-feedback hidden></p>
 
-                    <label for="about_editor_title">About Title</label>
+                    <label for="about_editor_title">{{ __('ui.about.about_title_label') }}</label>
                     <input type="text" id="about_editor_title" name="about_title" value="{{ old('about_title', $aboutContent['title'] ?? '') }}" required>
 
-                    <label for="about_editor_description">About Description</label>
+                    <label for="about_editor_description">{{ __('ui.about.about_description_label') }}</label>
                     <textarea id="about_editor_description" name="about_description" rows="4" required>{{ old('about_description', $aboutContent['description'] ?? '') }}</textarea>
 
                     <div class="crop-actions">
-                        <button type="button" class="btn btn-outline" data-close-about-editor>Cancel</button>
-                        <button type="submit" class="btn" data-about-editor-save>Save About Us</button>
+                        <button type="button" class="btn btn-outline" data-close-about-editor>{{ __('ui.home.cancel') }}</button>
+                        <button type="submit" class="btn" data-about-editor-save>{{ __('ui.about.save') }}</button>
                     </div>
                 </form>
             </div>
@@ -206,8 +206,8 @@
     <section class="services section" id="service">
         <div class="container">
             <div class="section-head fade-in">
-                <p class="eyebrow">Services</p>
-                <h2>Choose your consultation level</h2>
+                <p class="eyebrow">{{ __('ui.home.services') }}</p>
+                <h2>{{ __('ui.home.choose_consultation') }}</h2>
             </div>
 
             <div class="service-grid">
@@ -223,28 +223,28 @@
                                     @endforeach
                                 </ul>
                             @endif
-                            <p class="service-meta">Duration: {{ $service['duration'] }}</p>
-                            <p class="service-price">Price: {{ $service['price'] }}</p>
+                            <p class="service-meta">{{ __('ui.home.duration') }}: {{ $service['duration'] }}</p>
+                            <p class="service-price">{{ __('ui.home.price') }}: {{ $service['price'] }}</p>
                             <div class="card-actions">
-                                <a href="{{ route('booking', ['plan' => $service['name']]) }}" class="btn">Booking</a>
+                                <a href="{{ route('booking', ['plan' => $service['name']]) }}" class="btn">{{ __('ui.home.booking') }}</a>
                             </div>
                         </article>
                     @endforeach
                 @else
-                    <p class="service-meta">No service data available.</p>
+                    <p class="service-meta">{{ __('ui.home.no_service_data') }}</p>
                 @endif
             </div>
 
             <div class="booking-status-box fade-in" id="booking-status">
                 <div class="booking-status-head">
-                    <h3>Check Your Booking</h3>
-                    <p>Enter your booking code, then verify with 4 last digits phone number.</p>
+                    <h3>{{ __('ui.home.check_booking') }}</h3>
+                    <p>{{ __('ui.home.check_booking_description') }}</p>
                 </div>
 
                 <form method="post" action="{{ route('booking.status') }}" class="booking-status-form">
                     @csrf
                     <div class="booking-status-code-field">
-                        <label for="booking_code_lookup" class="booking-status-label">Booking Code</label>
+                        <label for="booking_code_lookup" class="booking-status-label">{{ __('ui.home.booking_code') }}</label>
                         <input
                             type="text"
                             id="booking_code_lookup"
@@ -257,7 +257,7 @@
                     </div>
 
                     <input type="hidden" name="phone_last4" value="{{ old('phone_last4') }}" data-phone-last4-hidden>
-                    <button type="button" class="btn booking-status-search-btn" data-open-booking-verify>Search Booking</button>
+                    <button type="button" class="btn booking-status-search-btn" data-open-booking-verify>{{ __('ui.home.search_booking') }}</button>
                 </form>
 
                 @if (!empty($bookingLookupError))
@@ -273,13 +273,13 @@
                         $statusClass = str_contains($statusValue, 'confirm') || str_contains($statusValue, 'complete') ? 'is-success' : (str_contains($statusValue, 'cancel') ? 'is-danger' : 'is-pending');
                     @endphp
                     <div class="booking-status-result">
-                        <p><span>Service</span><strong>{{ $bookingLookupResult['service_name'] ?? '-' }}</strong></p>
-                        <p><span>Date</span><strong>{{ $bookingLookupResult['date'] ?? '-' }}</strong></p>
-                        <p><span>Time Start</span><strong>{{ $bookingLookupResult['start_time'] ?? '-' }}</strong></p>
-                        <p><span>Time End</span><strong>{{ $bookingLookupResult['end_time'] ?? '-' }}</strong></p>
-                        <p><span>Name</span><strong>{{ $bookingLookupResult['name'] ?? '-' }}</strong></p>
-                        <p><span>Status</span><strong class="booking-status-pill {{ $statusClass }}">{{ $bookingLookupResult['status'] ?? '-' }}</strong></p>
-                        <p><span>Booking Code</span><strong>{{ $bookingLookupResult['booking_code'] ?? '-' }}</strong></p>
+                        <p><span>{{ __('ui.nav.service') }}</span><strong>{{ $bookingLookupResult['service_name'] ?? '-' }}</strong></p>
+                        <p><span>{{ __('ui.home.date') }}</span><strong>{{ $bookingLookupResult['date'] ?? '-' }}</strong></p>
+                        <p><span>{{ __('ui.home.time_start') }}</span><strong>{{ $bookingLookupResult['start_time'] ?? '-' }}</strong></p>
+                        <p><span>{{ __('ui.home.time_end') }}</span><strong>{{ $bookingLookupResult['end_time'] ?? '-' }}</strong></p>
+                        <p><span>{{ __('ui.home.name') }}</span><strong>{{ $bookingLookupResult['name'] ?? '-' }}</strong></p>
+                        <p><span>{{ __('ui.home.status') }}</span><strong class="booking-status-pill {{ $statusClass }}">{{ $bookingLookupResult['status'] ?? '-' }}</strong></p>
+                        <p><span>{{ __('ui.home.booking_code') }}</span><strong>{{ $bookingLookupResult['booking_code'] ?? '-' }}</strong></p>
                     </div>
                 @endif
             </div>
@@ -290,12 +290,12 @@
         <div class="crop-modal-backdrop" data-close-booking-verify></div>
         <div class="crop-modal-dialog booking-verify-dialog" role="dialog" aria-modal="true" aria-label="Verify phone">
             <div class="crop-modal-head">
-                <h2>Phone Verification</h2>
+                <h2>{{ __('ui.home.phone_verification') }}</h2>
                 <button type="button" class="crop-close" data-close-booking-verify aria-label="Close phone verification">x</button>
             </div>
 
-            <p class="service-meta">Input 4 digit terakhir nomor telepon yang dipakai saat booking.</p>
-            <label for="phone_last4_modal">Last 4 Digits Phone</label>
+            <p class="service-meta">{{ __('ui.home.phone_last_4_hint') }}</p>
+            <label for="phone_last4_modal">{{ __('ui.home.last_4_digits_phone') }}</label>
             <input
                 type="text"
                 id="phone_last4_modal"
@@ -304,11 +304,11 @@
                 maxlength="4"
                 placeholder="e.g. 6789"
             >
-            <p class="form-message error" data-booking-verify-error hidden>Masukkan tepat 4 digit angka.</p>
+            <p class="form-message error" data-booking-verify-error hidden>{{ __('ui.home.input_4_digits_error') }}</p>
 
             <div class="crop-actions">
-                <button type="button" class="btn btn-outline" data-close-booking-verify>Cancel</button>
-                <button type="button" class="btn" data-submit-booking-verify>Continue</button>
+                <button type="button" class="btn btn-outline" data-close-booking-verify>{{ __('ui.home.cancel') }}</button>
+                <button type="button" class="btn" data-submit-booking-verify>{{ __('ui.home.continue') }}</button>
             </div>
         </div>
     </div>
@@ -318,15 +318,15 @@
     <section class="contact section" id="contact">
         <div class="container contact-box fade-in">
             <div>
-                <p class="eyebrow">Contact Us</p>
-                <h2>Visit our studio or reach us online</h2>
-                <p>Official contact channels below are ready for booking inquiries and consultation schedules.</p>
+                <p class="eyebrow">{{ __('ui.nav.contact') }}</p>
+                <h2>{{ __('ui.home.visit_studio') }}</h2>
+                <p>{{ __('ui.home.contact_description') }}</p>
             </div>
             <div class="contact-list">
-                <p><strong>Phone:</strong> <a href="tel:{{ preg_replace('/[^0-9+]/', '', $contact['phone']) }}">{{ $contact['phone'] }}</a></p>
-                <p><strong>Instagram:</strong> <a href="https://instagram.com/{{ ltrim($contact['instagram'], '@') }}" target="_blank" rel="noopener">{{ $contact['instagram'] }}</a></p>
-                <p><strong>Studio Address:</strong> {{ $contact['address'] }}</p>
-                <p><a href="{{ $contact['maps'] }}" target="_blank" rel="noopener">Open on Google Maps</a></p>
+                <p><strong>{{ __('ui.home.phone') }}:</strong> <a href="tel:{{ preg_replace('/[^0-9+]/', '', $contact['phone']) }}">{{ $contact['phone'] }}</a></p>
+                <p><strong>{{ __('ui.home.instagram') }}:</strong> <a href="https://instagram.com/{{ ltrim($contact['instagram'], '@') }}" target="_blank" rel="noopener">{{ $contact['instagram'] }}</a></p>
+                <p><strong>{{ __('ui.home.studio_address') }}:</strong> {{ $contact['address'] }}</p>
+                <p><a href="{{ $contact['maps'] }}" target="_blank" rel="noopener">{{ __('ui.home.open_google_maps') }}</a></p>
             </div>
         </div>
     </section>

@@ -7,15 +7,15 @@
             @endif
         </a>
 
-        <button class="nav-toggle" type="button" aria-label="Toggle navigation" data-nav-toggle>
+        <button class="nav-toggle" type="button" aria-label="{{ __('ui.nav.toggle_navigation') }}" data-nav-toggle>
             <span></span><span></span><span></span>
         </button>
 
         <nav class="nav-links" data-nav-menu>
-            <a href="#home">Home</a>
-            <a href="#about">About</a>
-            <a href="#service">Service</a>
-            <a href="#contact">Contact Us</a>
+            <a href="#home">{{ __('ui.nav.home') }}</a>
+            <a href="#about">{{ __('ui.nav.about') }}</a>
+            <a href="#service">{{ __('ui.nav.service') }}</a>
+            <a href="#contact">{{ __('ui.nav.contact') }}</a>
         </nav>
     </div>
 </header>
