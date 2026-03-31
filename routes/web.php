@@ -55,6 +55,7 @@ Route::get('/financial-report', [Ctrl::class, 'adminFinancialReport'])->name('ad
 Route::get('/financial-report', [Ctrl::class, 'adminFinancialReport'])->name('admin.financial');
 Route::post('/financial-report/expense', [Ctrl::class, 'adminFinancialExpenseStore'])->name('admin.financial.expense.store');
 Route::post('/financial-report/expense/{expenseid}/update', [Ctrl::class, 'adminFinancialExpenseUpdate'])->name('admin.financial.expense.update');
+Route::post('/financial-report/expense/{expenseid}/delete', [Ctrl::class, 'adminFinancialExpenseDelete'])->name('admin.financial.expense.delete');
 Route::get('/financial-report/print', [Ctrl::class, 'adminFinancialReportPrint'])->name('admin.financial.print');
 Route::get('/financial-report/export-pdf', [Ctrl::class, 'adminFinancialReportExportPdf'])->name('admin.financial.export_pdf');
 Route::get('/financial-report/export-excel', [Ctrl::class, 'adminFinancialReportExportExcel'])->name('admin.financial.export_excel');

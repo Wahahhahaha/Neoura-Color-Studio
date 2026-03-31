@@ -825,9 +825,40 @@ class Ctrl extends Controller
         return $digits;
     }
 
-    private function whatsappMessageText(string $customerName, string $serviceName, string $bookingCode, string $bookingDate, string $startTime, string $endTime, string $studioName = 'Neora Color Studio'): string
+    private function whatsappMessageText(
+        string $customerName,
+        string $serviceName,
+        string $bookingCode,
+        string $bookingDate,
+        string $startTime,
+        string $endTime,
+        string $studioName = 'Neora Color Studio',
+        ?string $locale = null
+    ): string
     {
         $studio = trim($studioName) !== '' ? trim($studioName) : 'Neora Color Studio';
+        $activeLocale = strtolower(trim((string) ($locale ?? app()->getLocale())));
+        $isIndonesian = str_starts_with($activeLocale, 'id');
+
+        if ($isIndonesian) {
+            return implode("\n", [
+                "Halo {$customerName},",
+                "",
+                "Terima kasih sudah booking di *{$studio}*.",
+                "",
+                "*Detail Booking Anda:*",
+                "- Kode Booking: *{$bookingCode}*",
+                "- Layanan: {$serviceName}",
+                "- Tanggal: {$bookingDate}",
+                "- Waktu: {$startTime} - {$endTime}",
+                "- Status: Menunggu Validasi Pembayaran",
+                "",
+                "Simpan kode booking Anda untuk cek status booking.",
+                "",
+                "Salam,",
+                $studio,
+            ]);
+        }
 
         return implode("\n", [
             "Dear {$customerName},",
@@ -848,14 +879,49 @@ class Ctrl extends Controller
         ]);
     }
 
-    private function bookingEmailSubject(string $bookingCode): string
+    private function bookingEmailSubject(string $bookingCode, ?string $locale = null): string
     {
+        $activeLocale = strtolower(trim((string) ($locale ?? app()->getLocale())));
+        if (str_starts_with($activeLocale, 'id')) {
+            return "Konfirmasi Booking - {$bookingCode}";
+        }
+
         return "Booking Confirmation - {$bookingCode}";
     }
 
-    private function bookingEmailText(string $customerName, string $serviceName, string $bookingCode, string $bookingDate, string $startTime, string $endTime, string $studioName = 'Neora Color Studio'): string
+    private function bookingEmailText(
+        string $customerName,
+        string $serviceName,
+        string $bookingCode,
+        string $bookingDate,
+        string $startTime,
+        string $endTime,
+        string $studioName = 'Neora Color Studio',
+        ?string $locale = null
+    ): string
     {
         $studio = trim($studioName) !== '' ? trim($studioName) : 'Neora Color Studio';
+        $activeLocale = strtolower(trim((string) ($locale ?? app()->getLocale())));
+
+        if (str_starts_with($activeLocale, 'id')) {
+            return implode("\n", [
+                "Halo {$customerName},",
+                "",
+                "Terima kasih sudah booking di {$studio}.",
+                "",
+                "Detail booking Anda:",
+                "Kode Booking: {$bookingCode}",
+                "Layanan: {$serviceName}",
+                "Tanggal: {$bookingDate}",
+                "Waktu: {$startTime} - {$endTime}",
+                "Status: Menunggu Validasi Pembayaran",
+                "",
+                "Simpan kode booking Anda untuk cek status booking.",
+                "",
+                "Salam,",
+                $studio,
+            ]);
+        }
 
         return implode("\n", [
             "Dear {$customerName},",
@@ -2059,6 +2125,7 @@ class Ctrl extends Controller
 
         $startTime = $validated['time_slot'];
         $endTime = $this->toHm($endMinutes);
+        $activeLocale = strtolower(trim((string) app()->getLocale()));
         $messageText = $this->whatsappMessageText(
             $validated['full_name'],
             $selectedPlan,
@@ -2066,7 +2133,8 @@ class Ctrl extends Controller
             $validated['booking_date'],
             $startTime,
             $endTime,
-            $studioName
+            $studioName,
+            $activeLocale
         );
         $whatsAppResult = $this->sendWhatsAppMessage($validated['phone'], $messageText);
         $manualWhatsAppLink = 'https://wa.me/' . $this->normalizeWhatsAppNumber($validated['phone']) . '?text=' . rawurlencode($messageText);
@@ -2077,11 +2145,12 @@ class Ctrl extends Controller
             $validated['booking_date'],
             $startTime,
             $endTime,
-            $studioName
+            $studioName,
+            $activeLocale
         );
         $emailResult = $this->sendBookingEmail(
             $validated['email'],
-            $this->bookingEmailSubject($bookingCode),
+            $this->bookingEmailSubject($bookingCode, $activeLocale),
             $emailText
         );
 
@@ -3739,17 +3808,21 @@ class Ctrl extends Controller
         return DB::connection('mysql')
             ->table('neoura.payment as p')
             ->join('neoura.booking as b', 'b.bookingid', '=', 'p.bookingid')
+            ->leftJoin('neoura.timeslot as ts', 'ts.slotid', '=', 'b.slotid')
             ->leftJoin('neoura.service as s', 's.serviceid', '=', 'b.serviceid')
             ->select(
                 'p.paymentdate',
+                'ts.date as schedule_date',
                 's.price as service_price'
             )
             ->whereRaw('LOWER(TRIM(COALESCE(b.status, ""))) = ?', ['approved'])
             ->orderBy('p.paymentdate')
             ->get()
             ->map(function ($row) {
+                $scheduleDateRaw = trim((string) ($row->schedule_date ?? ''));
                 $paymentDateRaw = trim((string) ($row->paymentdate ?? ''));
-                $timestamp = strtotime($paymentDateRaw);
+                $dateSource = $scheduleDateRaw !== '' ? $scheduleDateRaw : $paymentDateRaw;
+                $timestamp = strtotime($dateSource);
                 $paymentDate = $timestamp !== false ? date('Y-m-d', $timestamp) : '';
                 $amount = $this->parseRupiahAmount((string) ($row->service_price ?? ''));
 
@@ -3929,6 +4002,7 @@ class Ctrl extends Controller
             'yearlyRows' => $reportData['yearlyRows'],
             'expenseRows' => $reportData['expenseRows'],
             'expenseCostResetThisMonth' => $seededFromPreviousMonth,
+            'totalExpenseValue' => $reportData['totalExpenseValue'],
             'totalExpenseLabel' => $reportData['totalExpenseLabel'],
             'netIncomeLabel' => $reportData['netIncomeLabel'],
             'monthName' => $reportData['monthName'],
@@ -4584,6 +4658,7 @@ class Ctrl extends Controller
             'monthlyRows' => $monthlyRows,
             'yearlyRows' => $yearlyRows,
             'expenseRows' => $expenseRows,
+            'totalExpenseValue' => $totalExpense,
             'totalExpenseLabel' => $this->formatRupiah($totalExpense),
             'netIncomeLabel' => $this->formatRupiah(max(0, $netIncome)),
             'monthName' => date('F', mktime(0, 0, 0, $selectedMonth, 1)),
@@ -4719,6 +4794,12 @@ class Ctrl extends Controller
             }
 
             if (mb_strlen($expenseName) > 255 || mb_strlen($expenseCost) > 255) {
+                if ($request->expectsJson() || $request->ajax()) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Expense name or amount is too long.',
+                    ], 422);
+                }
                 return redirect()->route('admin.financial')
                     ->withErrors(['expense' => 'Expense name or amount is too long.'])
                     ->withInput();
@@ -4726,6 +4807,12 @@ class Ctrl extends Controller
 
             $amount = $this->parseRupiahAmount($expenseCost);
             if ($expenseName === '' || $amount <= 0) {
+                if ($request->expectsJson() || $request->ajax()) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Every expense row must have a name and amount greater than 0.',
+                    ], 422);
+                }
                 return redirect()->route('admin.financial')
                     ->withErrors(['expense' => 'Every expense row must have a name and amount greater than 0.'])
                     ->withInput();
@@ -4740,14 +4827,45 @@ class Ctrl extends Controller
         }
 
         if (count($rowsToInsert) < 1) {
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Add at least one expense row before saving.',
+                ], 422);
+            }
             return redirect()->route('admin.financial')
                 ->withErrors(['expense' => 'Add at least one expense row before saving.'])
                 ->withInput();
         }
 
-        DB::connection('mysql')
-            ->table('neoura.expense')
-            ->insert($rowsToInsert);
+        $insertedRows = [];
+        foreach ($rowsToInsert as $row) {
+            $insertId = (int) DB::connection('mysql')
+                ->table('neoura.expense')
+                ->insertGetId($row);
+
+            $costValue = (int) ($row['cost'] ?? 0);
+            $insertedRows[] = [
+                'expenseid' => $insertId,
+                'expensename' => (string) ($row['expensename'] ?? ''),
+                'cost_raw' => (string) ($row['cost'] ?? '0'),
+                'cost_value' => $costValue,
+                'cost_label' => $this->formatRupiah($costValue),
+                'expense_year' => (int) ($row['expense_year'] ?? 0),
+                'expense_month' => (int) ($row['expense_month'] ?? 0),
+            ];
+        }
+
+        if ($request->expectsJson() || $request->ajax()) {
+            $totalExpense = $this->expenseTotalForMonth($expenseYear, $expenseMonth);
+            return response()->json([
+                'status' => 'ok',
+                'message' => count($insertedRows) . ' expense row(s) added.',
+                'rows' => $insertedRows,
+                'total_expense_value' => $totalExpense,
+                'total_expense_label' => $this->formatRupiah($totalExpense),
+            ]);
+        }
 
         return redirect()->route('admin.financial')->with('status', count($rowsToInsert) . ' expense row(s) added.');
     }
@@ -4810,6 +4928,57 @@ class Ctrl extends Controller
         }
 
         return redirect()->route('admin.financial')->with('status', 'Expense row updated.');
+    }
+
+    public function adminFinancialExpenseDelete(Request $request, int $expenseid)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'financial')) {
+            return $this->sidebarPermissionDenied($request);
+        }
+
+        $this->ensureExpenseStorageSchema();
+
+        $row = DB::connection('mysql')
+            ->table('neoura.expense')
+            ->select('expenseid', 'expense_year', 'expense_month')
+            ->where('expenseid', $expenseid)
+            ->first();
+
+        if (!$row) {
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Expense row not found.',
+                ], 404);
+            }
+
+            return redirect()->route('admin.financial')->withErrors(['expense' => 'Expense row not found.']);
+        }
+
+        DB::connection('mysql')
+            ->table('neoura.expense')
+            ->where('expenseid', $expenseid)
+            ->delete();
+
+        $year = (int) ($row->expense_year ?? date('Y'));
+        $month = (int) ($row->expense_month ?? date('n'));
+        $totalExpense = $this->expenseTotalForMonth($year, $month);
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'status' => 'ok',
+                'message' => 'Expense row deleted.',
+                'expenseid' => $expenseid,
+                'total_expense_value' => $totalExpense,
+                'total_expense_label' => $this->formatRupiah($totalExpense),
+            ]);
+        }
+
+        return redirect()->route('admin.financial')->with('status', 'Expense row deleted.');
     }
 
     public function account(Request $request)
