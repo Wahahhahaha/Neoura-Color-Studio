@@ -1,4 +1,17 @@
-<header class="site-header" id="top">
+<header class="site-header {{ !empty($showAdminMenu) ? 'site-header-with-admin' : '' }}" id="top" {{ !empty($showAdminMenu) ? 'data-admin-header-shell' : '' }}>
+    @if (!empty($showAdminMenu))
+        <button
+            type="button"
+            class="admin-top-sidebar-toggle admin-top-sidebar-toggle--column"
+            data-admin-sidebar-toggle
+            aria-label="Toggle sidebar"
+            aria-expanded="true"
+            title="Toggle sidebar"
+        >
+            <span></span><span></span><span></span>
+        </button>
+    @endif
+
     <div class="container nav-wrap">
         <a class="brand" href="{{ route('home') }}" data-admin-logo>
             <img src="{{ $website['logo_url'] ?? asset('images/neora-logo.svg') }}" alt="{{ $website['name'] ?? 'Neora Color Studio' }} logo" class="brand-logo">

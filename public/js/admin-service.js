@@ -2,6 +2,10 @@
     const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
     const serviceListRoot = document.querySelector('[data-service-list-root]');
     const serviceFetchUrl = serviceListRoot?.getAttribute('data-fetch-url') || '';
+    const loadFailedMessage = serviceListRoot?.getAttribute('data-load-failed') || 'Failed to load service list.';
+    const addFailedMessage = serviceListRoot?.getAttribute('data-add-failed') || 'Failed to add service.';
+    const addNetworkErrorMessage = serviceListRoot?.getAttribute('data-add-network-error') || 'Network error while adding service.';
+    const serviceAddedMessage = serviceListRoot?.getAttribute('data-service-added') || 'Service added.';
     const serviceState = {
         page: Math.max(1, Number(new URLSearchParams(window.location.search).get('page') || '1') || 1),
     };
@@ -24,7 +28,7 @@
 
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || payload?.status !== 'ok') {
-            throw new Error(payload?.message || 'Failed to load service list.');
+            throw new Error(payload?.message || loadFailedMessage);
         }
 
         serviceListRoot.innerHTML = payload?.html || '';
@@ -214,12 +218,12 @@
 
                 const payload = await response.json().catch(() => ({}));
                 if (!response.ok) {
-                    const errors = payload?.errors ? Object.values(payload.errors).flat().join(' ') : 'Failed to add service.';
+                    const errors = payload?.errors ? Object.values(payload.errors).flat().join(' ') : addFailedMessage;
                     setAddFeedback('error', errors);
                     return;
                 }
 
-                setAddFeedback('success', payload?.message || 'Service added.');
+                setAddFeedback('success', payload?.message || serviceAddedMessage);
                 window.setTimeout(async () => {
                     try {
                         await fetchServicePage(1);
@@ -229,7 +233,7 @@
                     }
                 }, 500);
             } catch (_) {
-                setAddFeedback('error', 'Network error while adding service.');
+                setAddFeedback('error', addNetworkErrorMessage);
             } finally {
                 if (addSaveBtn) {
                     addSaveBtn.disabled = false;

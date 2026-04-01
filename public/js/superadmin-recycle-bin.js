@@ -5,6 +5,7 @@
     const tableContainer = document.querySelector('[data-recycle-table-container]');
     const feedback = document.querySelector('[data-recycle-feedback]');
     const fetchUrl = filterWrap?.getAttribute('data-fetch-url') || '';
+    const loadFailedMessage = filterWrap?.getAttribute('data-load-failed') || 'Failed to load recycle data.';
     const state = {
         page: Math.max(1, Number(new URLSearchParams(window.location.search).get('page') || '1') || 1),
     };
@@ -53,7 +54,7 @@
 
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || payload?.status !== 'ok') {
-            throw new Error(payload?.message || 'Failed to load recycle data.');
+            throw new Error(payload?.message || loadFailedMessage);
         }
 
         tableContainer.innerHTML = payload?.html || '';
@@ -65,7 +66,7 @@
         try {
             await fetchRecycleTable(nextPage);
         } catch (error) {
-            setFeedback(error.message || 'Failed to load recycle data.', 'error');
+            setFeedback(error.message || loadFailedMessage, 'error');
         }
     };
 

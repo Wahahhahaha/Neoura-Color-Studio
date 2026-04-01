@@ -1,4 +1,4 @@
-﻿<footer class="site-footer">
+<footer class="site-footer {{ !empty($showAdminMenu) ? 'site-footer-with-admin' : '' }}" {{ !empty($showAdminMenu) ? 'data-admin-footer-shell' : '' }}>
     <div class="container">
         <p>&copy; {{ date('Y') }} Neora Color Studio. {{ __('ui.footer.copyright') }}</p>
     </div>

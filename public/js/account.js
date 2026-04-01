@@ -16,6 +16,7 @@
     const updateUrl = form.getAttribute('data-account-update-url') || form.getAttribute('action') || '';
     const sendOtpUrl = form.getAttribute('data-otp-send-url') || '';
     const verifyOtpUrl = form.getAttribute('data-otp-verify-url') || '';
+    const text = (key, fallback = '') => form.getAttribute(`data-text-${key}`) || fallback;
 
     let initialPhone = (form.getAttribute('data-initial-phone') || '').trim();
     let initialEmail = (form.getAttribute('data-initial-email') || '').trim().toLowerCase();
@@ -61,7 +62,7 @@
             return;
         }
         saveBtn.disabled = disabled;
-        saveBtn.textContent = disabled ? 'Processing...' : 'Save Account';
+        saveBtn.textContent = disabled ? text('processing', 'Processing...') : text('save-account', 'Save Account');
     };
 
     const syncSidebarAdminName = () => {
@@ -69,7 +70,7 @@
             return;
         }
 
-        const nextName = (nameInput?.value || '').trim() || 'Admin';
+        const nextName = (nameInput?.value || '').trim() || text('admin-fallback', 'Admin');
         sidebarAdminName.textContent = nextName;
     };
 
@@ -89,8 +90,15 @@
                 const nextType = input.type === 'password' ? 'text' : 'password';
                 input.type = nextType;
                 const isVisible = nextType === 'text';
-                button.setAttribute('aria-label', isVisible ? 'Hide password' : 'Show password');
-                button.setAttribute('title', isVisible ? 'Hide password' : 'Show password');
+                const isConfirmation = String(button.getAttribute('data-target') || '') === '#new_password_confirmation';
+                const showLabel = isConfirmation
+                    ? text('show-password-confirmation', 'Show password confirmation')
+                    : text('show-password', 'Show password');
+                const hideLabel = isConfirmation
+                    ? text('hide-password-confirmation', 'Hide password confirmation')
+                    : text('hide-password', 'Hide password');
+                button.setAttribute('aria-label', isVisible ? hideLabel : showLabel);
+                button.setAttribute('title', isVisible ? hideLabel : showLabel);
             });
         });
     };
@@ -120,7 +128,7 @@
             otpInput.value = '';
         }
         if (otpPhoneInfo) {
-            otpPhoneInfo.textContent = `OTP has been sent to ${phone}.`;
+            otpPhoneInfo.textContent = `${text('otp-sent-to', 'OTP has been sent to')} ${phone}.`;
         }
         otpModal.hidden = false;
         otpModal.classList.remove('is-enter');
@@ -150,7 +158,7 @@
         }
 
         if (emailNoticeText) {
-            emailNoticeText.textContent = message || 'Your account update has been saved. Please verify your new email using the link we sent.';
+            emailNoticeText.textContent = message || text('email-notice-default', 'Your account update has been saved. Please verify your new email using the link we sent.');
         }
 
         emailNoticeModal.hidden = false;
@@ -232,7 +240,7 @@
     const sendOtp = async (phone) => {
         const { ok, body } = await postJson(sendOtpUrl, { phonenumber: phone });
         if (!ok) {
-            throw new Error(firstErrorMessage(body, 'Failed to send OTP.'));
+            throw new Error(firstErrorMessage(body, text('send-otp-failed', 'Failed to send OTP.')));
         }
         return body;
     };
@@ -243,7 +251,7 @@
             otp_code: otp,
         });
         if (!ok) {
-            throw new Error(firstErrorMessage(body, 'OTP verification failed.'));
+            throw new Error(firstErrorMessage(body, text('otp-verification-failed', 'OTP verification failed.')));
         }
         return body;
     };
@@ -251,7 +259,7 @@
     const submitAccountUpdate = async (formData) => {
         const { ok, body } = await postForm(updateUrl, formData);
         if (!ok) {
-            throw new Error(firstErrorMessage(body, 'Failed to update account.'));
+            throw new Error(firstErrorMessage(body, text('update-failed', 'Failed to update account.')));
         }
         return body;
     };
@@ -263,7 +271,7 @@
     resendOtpBtn?.addEventListener('click', async () => {
         const phone = (phoneInput?.value || '').trim();
         if (!phone) {
-            setOtpError('Phone number is required.');
+            setOtpError(text('phone-required', 'Phone number is required.'));
             return;
         }
 
@@ -271,9 +279,9 @@
         try {
             await sendOtp(phone);
             clearOtpError();
-            setFeedback('OTP resent successfully.');
+            setFeedback(text('otp-resent', 'OTP resent successfully.'));
         } catch (error) {
-            setOtpError(error.message || 'Failed to resend OTP.');
+            setOtpError(error.message || text('resend-otp-failed', 'Failed to resend OTP.'));
         } finally {
             resendOtpBtn.disabled = false;
         }
@@ -283,13 +291,13 @@
         const phone = (phoneInput?.value || '').trim();
         const otp = (otpInput?.value || '').trim();
         if (!/^\d{6}$/.test(otp)) {
-            setOtpError('OTP must be exactly 6 digits.');
+            setOtpError(text('otp-six-digits', 'OTP must be exactly 6 digits.'));
             otpInput?.focus();
             return;
         }
 
         if (!(pendingFormData instanceof FormData)) {
-            setOtpError('Session expired. Please click Save Account again.');
+            setOtpError(text('otp-session-expired', 'Session expired. Please click Save Account again.'));
             return;
         }
 
@@ -305,13 +313,13 @@
             pendingFormData = null;
             closeOtpModal();
             syncSidebarAdminName();
-            setFeedback(result?.message || 'Account updated successfully.');
+            setFeedback(result?.message || text('account-updated', 'Account updated successfully.'));
             if (pendingEmailChangeNotice) {
-                openEmailNoticeModal(result?.message || 'Your account update has been saved. Please verify your new email using the link we sent.');
+                openEmailNoticeModal(result?.message || text('email-notice-default', 'Your account update has been saved. Please verify your new email using the link we sent.'));
             }
             setSaveButtonState(false);
         } catch (error) {
-            setOtpError(error.message || 'Failed to verify OTP.');
+            setOtpError(error.message || text('verify-otp-failed', 'Failed to verify OTP.'));
         } finally {
             confirmOtpBtn.disabled = false;
             resendOtpBtn && (resendOtpBtn.disabled = false);
@@ -329,7 +337,7 @@
 
         const currentPhone = (phoneInput?.value || '').trim();
         if (!currentPhone) {
-            setFeedback('Phone number is required.', true);
+            setFeedback(text('phone-required', 'Phone number is required.'), true);
             phoneInput?.focus();
             isSubmitting = false;
             setSaveButtonState(false);
@@ -342,22 +350,22 @@
             pendingFormData = formData;
             openOtpModal(currentPhone);
             if (otpPhoneInfo) {
-                otpPhoneInfo.textContent = `Sending OTP to ${currentPhone}...`;
+                otpPhoneInfo.textContent = `${text('sending-otp-to', 'Sending OTP to')} ${currentPhone}...`;
             }
             confirmOtpBtn && (confirmOtpBtn.disabled = true);
             resendOtpBtn && (resendOtpBtn.disabled = true);
             try {
                 await sendOtp(currentPhone);
-                setFeedback('OTP sent to new phone number.');
+                setFeedback(text('otp-sent-new-phone', 'OTP sent to new phone number.'));
                 if (otpPhoneInfo) {
-                    otpPhoneInfo.textContent = `OTP has been sent to ${currentPhone}.`;
+                    otpPhoneInfo.textContent = `${text('otp-sent-to', 'OTP has been sent to')} ${currentPhone}.`;
                 }
                 confirmOtpBtn && (confirmOtpBtn.disabled = false);
                 resendOtpBtn && (resendOtpBtn.disabled = false);
                 otpInput?.focus();
             } catch (error) {
-                setOtpError(error.message || 'Failed to send OTP.');
-                setFeedback(error.message || 'Failed to send OTP.', true);
+                setOtpError(error.message || text('send-otp-failed', 'Failed to send OTP.'));
+                setFeedback(error.message || text('send-otp-failed', 'Failed to send OTP.'), true);
                 confirmOtpBtn && (confirmOtpBtn.disabled = true);
                 resendOtpBtn && (resendOtpBtn.disabled = false);
                 isSubmitting = false;
@@ -371,12 +379,12 @@
             initialEmail = (emailInput?.value || '').trim().toLowerCase();
             form.setAttribute('data-initial-email', initialEmail);
             syncSidebarAdminName();
-            setFeedback(result?.message || 'Account updated successfully.');
+            setFeedback(result?.message || text('account-updated', 'Account updated successfully.'));
             if (pendingEmailChangeNotice) {
-                openEmailNoticeModal(result?.message || 'Your account update has been saved. Please verify your new email using the link we sent.');
+                openEmailNoticeModal(result?.message || text('email-notice-default', 'Your account update has been saved. Please verify your new email using the link we sent.'));
             }
         } catch (error) {
-            setFeedback(error.message || 'Failed to update account.', true);
+            setFeedback(error.message || text('update-failed', 'Failed to update account.'), true);
         } finally {
             isSubmitting = false;
             setSaveButtonState(false);

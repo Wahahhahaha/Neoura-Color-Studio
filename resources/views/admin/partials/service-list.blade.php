@@ -1,7 +1,7 @@
 @if (empty($serviceRows))
     <div class="admin-service-empty">
-        <h3>No Services Yet</h3>
-        <p>Create your first service to start managing packages.</p>
+        <h3>{{ __('ui.admin.service.no_services_yet') }}</h3>
+        <p>{{ __('ui.admin.service.create_first_service') }}</p>
     </div>
 @else
     <div class="admin-service-page-list">
@@ -16,17 +16,17 @@
 
                 <div class="admin-service-meta-grid">
                     <div class="admin-service-meta-card">
-                        <span>Duration</span>
+                        <span>{{ __('ui.common.duration') }}</span>
                         <strong>{{ $service['duration'] ?: '-' }}</strong>
                     </div>
                     <div class="admin-service-meta-card">
-                        <span>Price</span>
+                        <span>{{ __('ui.common.price') }}</span>
                         <strong>{{ $service['price'] ?: '-' }}</strong>
                     </div>
                 </div>
 
                 <div class="admin-service-desc-wrap">
-                    <p class="setting-label admin-service-desc-title">Descriptions</p>
+                    <p class="setting-label admin-service-desc-title">{{ __('ui.admin.service.descriptions') }}</p>
                     @if (!empty($service['descriptions']))
                         <ul class="detail-list admin-service-desc-list">
                             @foreach ($service['descriptions'] as $description)
@@ -34,7 +34,7 @@
                             @endforeach
                         </ul>
                     @else
-                        <p class="service-meta">No description yet.</p>
+                        <p class="service-meta">{{ __('ui.admin.service.no_description_yet') }}</p>
                     @endif
                 </div>
 
@@ -50,7 +50,7 @@
                         data-service-price="{{ $service['price'] }}"
                         data-service-descriptions='@json($service["descriptions"])'
                     >
-                        Edit
+                        {{ __('ui.common.edit') }}
                     </button>
                 </div>
             </article>
@@ -60,7 +60,7 @@
 
 <div class="admin-user-pagination" data-service-pagination>
     <p class="admin-user-pagination-meta">
-        Showing {{ $servicePagination['from'] ?? 0 }}-{{ $servicePagination['to'] ?? 0 }} of {{ $servicePagination['total'] ?? 0 }}
+        {{ __('ui.common.showing_range_of_total', ['from' => $servicePagination['from'] ?? 0, 'to' => $servicePagination['to'] ?? 0, 'total' => $servicePagination['total'] ?? 0]) }}
     </p>
     <div class="admin-user-pagination-actions">
         @php
@@ -70,11 +70,11 @@
             $end = min($lastPage, $currentPage + 2);
         @endphp
 
-        <button type="button" class="btn btn-outline" data-service-page="{{ max(1, $currentPage - 1) }}" {{ $currentPage <= 1 ? 'disabled' : '' }}>Prev</button>
+        <button type="button" class="btn btn-outline" data-service-page="{{ max(1, $currentPage - 1) }}" {{ $currentPage <= 1 ? 'disabled' : '' }}>{{ __('ui.common.prev') }}</button>
         @for ($cursor = $start; $cursor <= $end; $cursor++)
             <button type="button" class="btn btn-outline {{ $cursor === $currentPage ? 'is-active' : '' }}" data-service-page="{{ $cursor }}" {{ $cursor === $currentPage ? 'disabled' : '' }}>{{ $cursor }}</button>
         @endfor
-        <button type="button" class="btn btn-outline" data-service-page="{{ min($lastPage, $currentPage + 1) }}" {{ $currentPage >= $lastPage ? 'disabled' : '' }}>Next</button>
-        <span class="admin-user-pagination-page">Page {{ $currentPage }} / {{ $lastPage }}</span>
+        <button type="button" class="btn btn-outline" data-service-page="{{ min($lastPage, $currentPage + 1) }}" {{ $currentPage >= $lastPage ? 'disabled' : '' }}>{{ __('ui.common.next') }}</button>
+        <span class="admin-user-pagination-page">{{ __('ui.common.page_of', ['page' => $currentPage, 'last_page' => $lastPage]) }}</span>
     </div>
 </div>

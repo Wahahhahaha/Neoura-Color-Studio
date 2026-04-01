@@ -11,6 +11,7 @@
     const paginationWrap = document.querySelector('[data-userdata-pagination]');
     const paginationMeta = document.querySelector('[data-userdata-pagination-meta]');
     const paginationActions = document.querySelector('[data-userdata-pagination-actions]');
+    const t = (key, fallback = '') => tableWrap?.getAttribute(`data-text-${key}`) || fallback;
 
     const addModal = document.querySelector('[data-add-user-modal]');
     const openAddBtn = document.querySelector('[data-open-add-user-modal]');
@@ -120,7 +121,7 @@
 
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || payload?.status !== 'ok') {
-            throw new Error(payload?.message || 'Action failed.');
+            throw new Error(payload?.message || t('action-failed', 'Action failed.'));
         }
 
         return payload;
@@ -140,7 +141,7 @@
 
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || payload?.status !== 'ok') {
-            throw new Error(payload?.message || 'Action failed.');
+            throw new Error(payload?.message || t('action-failed', 'Action failed.'));
         }
 
         return payload;
@@ -163,10 +164,10 @@
                 <div class="admin-user-level-cell">
                     <span class="user-level-badge">${escapeHtml(user.level)}</span>
                     <div class="admin-user-actions">
-                        <button type="button" class="admin-user-action-btn" title="Reset Password" aria-label="Reset Password" data-user-reset>
+                        <button type="button" class="admin-user-action-btn" title="${escapeHtml(t('reset-password', 'Reset Password'))}" aria-label="${escapeHtml(t('reset-password', 'Reset Password'))}" data-user-reset>
                             <svg viewBox="0 0 24 24" class="admin-icon" aria-hidden="true"><path d="M20 11a8 8 0 1 0 2 5.5M20 4v7h-7"/></svg>
                         </button>
-                        <button type="button" class="admin-user-action-btn admin-user-action-delete" title="Delete User" aria-label="Delete User" data-user-delete>
+                        <button type="button" class="admin-user-action-btn admin-user-action-delete" title="${escapeHtml(t('delete-user', 'Delete User'))}" aria-label="${escapeHtml(t('delete-user', 'Delete User'))}" data-user-delete>
                             <svg viewBox="0 0 24 24" class="admin-icon" aria-hidden="true"><path d="M6 7h12m-9 0V5h6v2m-7 0 1 12h8l1-12"/></svg>
                         </button>
                     </div>
@@ -177,7 +178,7 @@
 
     const noRowsHtml = `
         <tr>
-            <td colspan="5">No user data found.</td>
+            <td colspan="5">${escapeHtml(t('no-data', 'No user data found.'))}</td>
         </tr>
     `;
 
@@ -215,7 +216,7 @@
         state.page = page;
         state.lastPage = lastPage;
 
-        paginationMeta.textContent = `Showing ${from}-${to} of ${total}`;
+        paginationMeta.textContent = `${t('showing', 'Showing')} ${from}-${to} ${t('of', 'of')} ${total}`;
 
         if (total <= 0) {
             paginationActions.innerHTML = '';
@@ -226,13 +227,13 @@
         const start = Math.max(1, page - 2);
         const end = Math.min(lastPage, page + 2);
 
-        pageButtons.push(createPageButtonHtml(Math.max(1, page - 1), 'Prev', false, page <= 1));
+        pageButtons.push(createPageButtonHtml(Math.max(1, page - 1), t('prev', 'Prev'), false, page <= 1));
         for (let cursor = start; cursor <= end; cursor++) {
             pageButtons.push(createPageButtonHtml(cursor, String(cursor), cursor === page, cursor === page));
         }
-        pageButtons.push(createPageButtonHtml(Math.min(lastPage, page + 1), 'Next', false, page >= lastPage));
+        pageButtons.push(createPageButtonHtml(Math.min(lastPage, page + 1), t('next', 'Next'), false, page >= lastPage));
 
-        paginationActions.innerHTML = pageButtons.join('') + `<span class="admin-user-pagination-page">Page ${page} / ${lastPage}</span>`;
+        paginationActions.innerHTML = pageButtons.join('') + `<span class="admin-user-pagination-page">${escapeHtml(t('page', 'Page'))} ${page} / ${lastPage}</span>`;
     };
 
     const fetchUsers = async (nextPage = null) => {
@@ -260,7 +261,7 @@
 
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || payload?.status !== 'ok') {
-            throw new Error(payload?.message || 'Failed to load user data.');
+            throw new Error(payload?.message || t('load-failed', 'Failed to load user data.'));
         }
 
         renderRows(payload?.rows || []);
@@ -313,9 +314,9 @@
             const payload = await postForm(storeUrl, new FormData(addForm));
             closeAddModal();
             await fetchUsers(state.page);
-            setFeedback(payload?.message || 'User added successfully.', 'success');
+            setFeedback(payload?.message || t('user-added', 'User added successfully.'), 'success');
         } catch (error) {
-            setAddFeedback(error.message || 'Failed to add user.', 'error');
+            setAddFeedback(error.message || t('add-failed', 'Failed to add user.'), 'error');
         } finally {
             if (addSaveBtn) {
                 addSaveBtn.disabled = false;
@@ -338,7 +339,7 @@
                 clearFeedback();
                 await fetchUsers(state.page);
             } catch (error) {
-                setFeedback(error.message || 'Failed to load user data.', 'error');
+                setFeedback(error.message || t('load-failed', 'Failed to load user data.'), 'error');
             }
         }, 300);
     });
@@ -350,7 +351,7 @@
             clearFeedback();
             await fetchUsers(state.page);
         } catch (error) {
-            setFeedback(error.message || 'Failed to load user data.', 'error');
+            setFeedback(error.message || t('load-failed', 'Failed to load user data.'), 'error');
         }
     });
 
@@ -369,7 +370,7 @@
             clearFeedback();
             await fetchUsers(nextPage);
         } catch (error) {
-            setFeedback(error.message || 'Failed to load user data.', 'error');
+            setFeedback(error.message || t('load-failed', 'Failed to load user data.'), 'error');
         }
     });
 
@@ -387,7 +388,7 @@
 
         const userId = Number(row.getAttribute('data-userid') || '0');
         if (!userId) {
-            setFeedback('Invalid user ID.', 'error');
+            setFeedback(t('invalid-user-id', 'Invalid user ID.'), 'error');
             return;
         }
 
@@ -398,20 +399,20 @@
         try {
             if (resetBtn) {
                 const payload = await postAction(buildUrl(resetTemplate, userId));
-                setFeedback(payload?.message || 'Password reset successful.', 'success');
+                setFeedback(payload?.message || t('password-reset-success', 'Password reset successful.'), 'success');
                 return;
             }
 
-            const confirmed = window.confirm('Delete this user? This action cannot be undone.');
+            const confirmed = window.confirm(t('delete-confirm', 'Delete this user? This action cannot be undone.'));
             if (!confirmed) {
                 return;
             }
 
             const payload = await postAction(buildUrl(deleteTemplate, userId));
             await fetchUsers(state.page);
-            setFeedback(payload?.message || 'User deleted.', 'success');
+            setFeedback(payload?.message || t('user-deleted', 'User deleted.'), 'success');
         } catch (error) {
-            setFeedback(error.message || 'Action failed.', 'error');
+            setFeedback(error.message || t('action-failed', 'Action failed.'), 'error');
         } finally {
             activeButton.disabled = false;
         }

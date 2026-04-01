@@ -2,13 +2,13 @@
     <table class="admin-user-table">
         <thead>
             <tr>
-                <th>Name</th>
-                <th>IP Address</th>
-                <th>Longitude</th>
-                <th>Latitude</th>
-                <th>Action</th>
-                <th>Date Time</th>
-                <th>Detail</th>
+                <th>{{ __('ui.common.name') }}</th>
+                <th>{{ __('ui.common.ip_address') }}</th>
+                <th>{{ __('ui.admin.activity_log.longitude') }}</th>
+                <th>{{ __('ui.admin.activity_log.latitude') }}</th>
+                <th>{{ __('ui.common.action') }}</th>
+                <th>{{ __('ui.admin.activity_log.date_time') }}</th>
+                <th>{{ __('ui.common.detail') }}</th>
             </tr>
         </thead>
         <tbody>
@@ -24,7 +24,7 @@
                 </tr>
             @empty
                 <tr>
-                    <td colspan="7">No activity log data available.</td>
+                    <td colspan="7">{{ __('ui.admin.activity_log.no_data') }}</td>
                 </tr>
             @endforelse
         </tbody>
@@ -33,7 +33,7 @@
 
 <div class="admin-user-pagination" data-activitylog-pagination>
     <p class="admin-user-pagination-meta" data-activitylog-pagination-meta>
-        Showing {{ $activityPagination['from'] ?? 0 }}-{{ $activityPagination['to'] ?? 0 }} of {{ $activityPagination['total'] ?? 0 }}
+        {{ __('ui.common.showing_range_of_total', ['from' => $activityPagination['from'] ?? 0, 'to' => $activityPagination['to'] ?? 0, 'total' => $activityPagination['total'] ?? 0]) }}
     </p>
     <div class="admin-user-pagination-actions" data-activitylog-pagination-actions>
         @php
@@ -43,11 +43,11 @@
             $end = min($lastPage, $currentPage + 2);
         @endphp
 
-        <button type="button" class="btn btn-outline" data-activitylog-page="{{ max(1, $currentPage - 1) }}" {{ $currentPage <= 1 ? 'disabled' : '' }}>Prev</button>
+        <button type="button" class="btn btn-outline" data-activitylog-page="{{ max(1, $currentPage - 1) }}" {{ $currentPage <= 1 ? 'disabled' : '' }}>{{ __('ui.common.prev') }}</button>
         @for ($cursor = $start; $cursor <= $end; $cursor++)
             <button type="button" class="btn btn-outline {{ $cursor === $currentPage ? 'is-active' : '' }}" data-activitylog-page="{{ $cursor }}" {{ $cursor === $currentPage ? 'disabled' : '' }}>{{ $cursor }}</button>
         @endfor
-        <button type="button" class="btn btn-outline" data-activitylog-page="{{ min($lastPage, $currentPage + 1) }}" {{ $currentPage >= $lastPage ? 'disabled' : '' }}>Next</button>
-        <span class="admin-user-pagination-page">Page {{ $currentPage }} / {{ $lastPage }}</span>
+        <button type="button" class="btn btn-outline" data-activitylog-page="{{ min($lastPage, $currentPage + 1) }}" {{ $currentPage >= $lastPage ? 'disabled' : '' }}>{{ __('ui.common.next') }}</button>
+        <span class="admin-user-pagination-page">{{ __('ui.common.page_of', ['page' => $currentPage, 'last_page' => $lastPage]) }}</span>
     </div>
 </div>

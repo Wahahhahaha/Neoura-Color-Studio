@@ -2,9 +2,9 @@
     <div class="container">
         <div class="setting-wrap">
             <div class="section-head">
-                <p class="eyebrow">Superadmin</p>
-                <h1>Recycle Bin</h1>
-                <p>Service audit log for edit/delete actions, including actor, action type, IP address, and field-level changes.</p>
+                <p class="eyebrow">{{ __('ui.superadmin.recycle_bin.eyebrow') }}</p>
+                <h1>{{ __('ui.superadmin.recycle_bin.title') }}</h1>
+                <p>{{ __('ui.superadmin.recycle_bin.description') }}</p>
             </div>
 
             @if (session('status'))
@@ -17,22 +17,27 @@
 
             <p class="setting-alert" data-recycle-feedback hidden></p>
 
-            <div class="recycle-filter-row" data-recycle-filter-wrap data-fetch-url="{{ route('superadmin.recyclebin') }}">
+            <div
+                class="recycle-filter-row"
+                data-recycle-filter-wrap
+                data-fetch-url="{{ route('superadmin.recyclebin') }}"
+                data-load-failed="{{ __('ui.superadmin.recycle_bin.load_failed') }}"
+            >
                 <div class="recycle-filter-item">
-                    <label for="recycle_level_filter">Filter by Level</label>
+                    <label for="recycle_level_filter">{{ __('ui.superadmin.recycle_bin.filter_by_level') }}</label>
                     <select id="recycle_level_filter" data-recycle-level-filter>
-                        <option value="all" {{ ($selectedRecycleLevel ?? 'all') === 'all' ? 'selected' : '' }}>All Levels</option>
+                        <option value="all" {{ ($selectedRecycleLevel ?? 'all') === 'all' ? 'selected' : '' }}>{{ __('ui.common.all_levels') }}</option>
                         @foreach (($recycleLevelOptions ?? []) as $level)
                             <option value="{{ $level }}" {{ ($selectedRecycleLevel ?? 'all') === $level ? 'selected' : '' }}>{{ strtoupper($level) }}</option>
                         @endforeach
                     </select>
                 </div>
                 <div class="recycle-filter-item">
-                    <label for="recycle_action_filter">Filter by Action</label>
+                    <label for="recycle_action_filter">{{ __('ui.superadmin.recycle_bin.filter_by_action') }}</label>
                     <select id="recycle_action_filter" data-recycle-action-filter>
-                        <option value="all" {{ ($selectedRecycleAction ?? 'all') === 'all' ? 'selected' : '' }}>All Actions</option>
-                        <option value="update" {{ ($selectedRecycleAction ?? 'all') === 'update' ? 'selected' : '' }}>EDIT</option>
-                        <option value="delete" {{ ($selectedRecycleAction ?? 'all') === 'delete' ? 'selected' : '' }}>DELETE</option>
+                        <option value="all" {{ ($selectedRecycleAction ?? 'all') === 'all' ? 'selected' : '' }}>{{ __('ui.common.all_actions') }}</option>
+                        <option value="update" {{ ($selectedRecycleAction ?? 'all') === 'update' ? 'selected' : '' }}>{{ __('ui.common.edit_upper') }}</option>
+                        <option value="delete" {{ ($selectedRecycleAction ?? 'all') === 'delete' ? 'selected' : '' }}>{{ __('ui.common.delete_upper') }}</option>
                     </select>
                 </div>
             </div>

@@ -2,9 +2,9 @@
     <div class="container">
         <div class="setting-wrap">
             <div class="section-head">
-                <p class="eyebrow">Superadmin</p>
-                <h1>Backup Database</h1>
-                <p>Export current database to SQL file or restore database from SQL backup file.</p>
+                <p class="eyebrow">{{ __('ui.superadmin.backup.eyebrow') }}</p>
+                <h1>{{ __('ui.superadmin.backup.title') }}</h1>
+                <p>{{ __('ui.superadmin.backup.description') }}</p>
             </div>
 
             @if (session('status'))
@@ -17,26 +17,26 @@
 
             <div class="admin-service-page-list">
                 <div class="admin-service-page-card">
-                    <h3>Export Database (.sql)</h3>
-                    <p>Download full SQL backup of the current database.</p>
+                    <h3>{{ __('ui.superadmin.backup.export_title') }}</h3>
+                    <p>{{ __('ui.superadmin.backup.export_description') }}</p>
                     <form method="post" action="{{ route('superadmin.backup.export_sql') }}" class="setting-form">
                         @csrf
                         <div class="setting-actions">
-                            <button type="submit" class="btn">Export SQL Backup</button>
+                            <button type="submit" class="btn">{{ __('ui.superadmin.backup.export_button') }}</button>
                         </div>
                     </form>
                 </div>
 
                 <div class="admin-service-page-card">
-                    <h3>Restore Database (.sql)</h3>
-                    <p>Upload SQL file to restore database structure and data.</p>
+                    <h3>{{ __('ui.superadmin.backup.restore_title') }}</h3>
+                    <p>{{ __('ui.superadmin.backup.restore_description') }}</p>
                     <form method="post" action="{{ route('superadmin.backup.import_sql') }}" enctype="multipart/form-data" class="setting-form">
                         @csrf
-                        <label for="backup_sql">SQL File</label>
+                        <label for="backup_sql">{{ __('ui.superadmin.backup.sql_file') }}</label>
                         <input type="file" id="backup_sql" name="backup_sql" accept=".sql,.txt" required>
 
                         <div class="setting-actions">
-                            <button type="submit" class="btn">Upload & Restore</button>
+                            <button type="submit" class="btn">{{ __('ui.superadmin.backup.upload_restore') }}</button>
                         </div>
                     </form>
                 </div>

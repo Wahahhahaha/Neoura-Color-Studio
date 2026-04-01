@@ -171,6 +171,7 @@ class Ctrl extends Controller
             'superadmin.permission.update' => 'Update Sidebar Permission',
             'carousel.update' => 'Update Home Carousel',
             'about.update' => 'Update About Content',
+            'contact.update' => 'Update Contact Section Content',
         ];
 
         if ($routeName !== '' && isset($map[$routeName])) {
@@ -1279,6 +1280,73 @@ class Ctrl extends Controller
         file_put_contents($file, json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
     }
 
+    private function defaultContactSectionContent(?string $locale = null): array
+    {
+        $activeLocale = strtolower(trim((string) ($locale ?? app()->getLocale())));
+        if ($activeLocale === 'id') {
+            return [
+                'title' => 'Kunjungi studio kami atau hubungi kami online',
+                'description' => 'Kanal kontak resmi di bawah siap untuk pertanyaan booking dan jadwal konsultasi.',
+            ];
+        }
+
+        return [
+            'title' => 'Visit our studio or reach us online',
+            'description' => 'Official contact channels below are ready for booking inquiries and consultation schedules.',
+        ];
+    }
+
+    private function contactSectionContent(): array
+    {
+        $locale = strtolower(trim((string) app()->getLocale()));
+        $defaults = $this->defaultContactSectionContent($locale);
+        $defaultsEn = $this->defaultContactSectionContent('en');
+        $file = storage_path('app/contact-section-content.json');
+
+        if (!is_file($file)) {
+            return $defaults;
+        }
+
+        $raw = file_get_contents($file);
+        $decoded = json_decode((string) $raw, true);
+        if (!is_array($decoded)) {
+            return $defaults;
+        }
+
+        $title = trim((string) (
+            ($locale === 'id' ? ($decoded['title_id'] ?? null) : ($decoded['title_en'] ?? null))
+                ?? ($decoded['title'] ?? '')
+        ));
+        $description = trim((string) (
+            ($locale === 'id' ? ($decoded['description_id'] ?? null) : ($decoded['description_en'] ?? null))
+                ?? ($decoded['description'] ?? '')
+        ));
+
+        if (
+            $locale === 'id'
+            && $title === $defaultsEn['title']
+            && $description === $defaultsEn['description']
+        ) {
+            return $defaults;
+        }
+
+        return [
+            'title' => $title !== '' ? $title : $defaults['title'],
+            'description' => $description !== '' ? $description : $defaults['description'],
+        ];
+    }
+
+    private function saveContactSectionContent(array $contactSection): void
+    {
+        $payload = [
+            'title' => trim((string) ($contactSection['title'] ?? '')),
+            'description' => trim((string) ($contactSection['description'] ?? '')),
+        ];
+
+        $file = storage_path('app/contact-section-content.json');
+        file_put_contents($file, json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+    }
+
     private function decorateCarouselSlides(array $slides): array
     {
         $palette = ['slide-solid-1', 'slide-solid-2', 'slide-solid-3'];
@@ -1860,6 +1928,7 @@ class Ctrl extends Controller
         $carouselSlides = $this->carouselSlides();
         $carouselSettings = $this->carouselSettings();
         $aboutContent = $this->aboutContent();
+        $contactSectionContent = $this->contactSectionContent();
         $sidebarServices = $this->sidebarServices();
         $bookingLookupResult = $request->session()->get('booking_lookup_result');
         $bookingLookupError = (string) $request->session()->get('booking_lookup_error', '');
@@ -1880,6 +1949,7 @@ class Ctrl extends Controller
             'carouselSlides' => $carouselSlides,
             'carouselAutoplayMs' => (int) ($carouselSettings['autoplay_ms'] ?? $this->defaultCarouselAutoplayMs()),
             'aboutContent' => $aboutContent,
+            'contactSectionContent' => $contactSectionContent,
             'sidebarServices' => $sidebarServices,
             'bookingLookupResult' => is_array($bookingLookupResult) ? $bookingLookupResult : null,
             'bookingLookupError' => $bookingLookupError,
@@ -3024,6 +3094,7 @@ class Ctrl extends Controller
         $validated = $request->validate([
             'action' => ['required', 'in:approve,reject'],
         ]);
+        $this->ensurePaymentValidationSchema();
 
         $booking = DB::connection('mysql')
             ->table('neoura.booking')
@@ -3048,6 +3119,13 @@ class Ctrl extends Controller
                 ->table('neoura.booking')
                 ->where('bookingid', $bookingid)
                 ->update(['status' => $nextStatus]);
+
+            DB::connection('mysql')
+                ->table('neoura.payment')
+                ->where('bookingid', $bookingid)
+                ->update([
+                    'validated_at' => $nextStatus === 'Approved' ? now()->toDateTimeString() : null,
+                ]);
 
             if ($nextStatus === 'Rejected') {
                 DB::connection('mysql')
@@ -3806,24 +3884,23 @@ class Ctrl extends Controller
 
     private function approvedPaymentIncomeEntries(): array
     {
+        $this->ensurePaymentValidationSchema();
+
         return DB::connection('mysql')
             ->table('neoura.payment as p')
             ->join('neoura.booking as b', 'b.bookingid', '=', 'p.bookingid')
-            ->leftJoin('neoura.timeslot as ts', 'ts.slotid', '=', 'b.slotid')
             ->leftJoin('neoura.service as s', 's.serviceid', '=', 'b.serviceid')
             ->select(
-                'p.paymentdate',
-                'ts.date as schedule_date',
+                'p.validated_at',
                 's.price as service_price'
             )
             ->whereRaw('LOWER(TRIM(COALESCE(b.status, ""))) = ?', ['approved'])
-            ->orderBy('p.paymentdate')
+            ->whereNotNull('p.validated_at')
+            ->orderBy('p.validated_at')
             ->get()
             ->map(function ($row) {
-                $scheduleDateRaw = trim((string) ($row->schedule_date ?? ''));
-                $paymentDateRaw = trim((string) ($row->paymentdate ?? ''));
-                $dateSource = $scheduleDateRaw !== '' ? $scheduleDateRaw : $paymentDateRaw;
-                $timestamp = strtotime($dateSource);
+                $validatedAtRaw = trim((string) ($row->validated_at ?? ''));
+                $timestamp = strtotime($validatedAtRaw);
                 $paymentDate = $timestamp !== false ? date('Y-m-d', $timestamp) : '';
                 $amount = $this->parseRupiahAmount((string) ($row->service_price ?? ''));
 
@@ -3835,6 +3912,21 @@ class Ctrl extends Controller
             ->filter(fn($entry) => is_array($entry) && ($entry['payment_date'] ?? '') !== '')
             ->values()
             ->all();
+    }
+
+    private function ensurePaymentValidationSchema(): void
+    {
+        $connection = DB::connection('mysql');
+        $schemaName = 'neoura';
+
+        $validatedAtColumn = $connection->selectOne(
+            'SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+            [$schemaName, 'payment', 'validated_at']
+        );
+
+        if (!$validatedAtColumn) {
+            $connection->statement('ALTER TABLE neoura.payment ADD COLUMN validated_at DATETIME NULL AFTER paymentdate');
+        }
     }
 
     private function ensureExpenseStorageSchema(): void
@@ -5121,6 +5213,63 @@ class Ctrl extends Controller
         ]);
     }
 
+    private function activityQuotedValue(string $value): string
+    {
+        $normalized = trim($value);
+        if ($normalized === '') {
+            return '"-"';
+        }
+
+        return '"' . str_replace('"', "'", $normalized) . '"';
+    }
+
+    private function buildAccountUpdateActivityDetail(
+        string $currentName,
+        string $nextName,
+        string $currentEmail,
+        string $nextEmail,
+        string $currentPhone,
+        string $nextPhone,
+        bool $isEmailChanged,
+        bool $isPhoneChanged,
+        bool $isPasswordChanged,
+        bool $emailVerificationSent
+    ): string {
+        $segments = [];
+
+        if (!hash_equals($currentName, $nextName)) {
+            $segments[] = 'updated profile name from '
+                . $this->activityQuotedValue($currentName)
+                . ' to '
+                . $this->activityQuotedValue($nextName);
+        }
+
+        if ($isEmailChanged) {
+            $segments[] = 'requested email change from '
+                . $this->activityQuotedValue($currentEmail)
+                . ' to '
+                . $this->activityQuotedValue($nextEmail)
+                . ($emailVerificationSent ? ' (verification sent)' : ' (verification pending)');
+        }
+
+        if ($isPhoneChanged) {
+            $segments[] = 'updated phone number from '
+                . $this->activityQuotedValue($currentPhone)
+                . ' to '
+                . $this->activityQuotedValue($nextPhone);
+        }
+
+        if ($isPasswordChanged) {
+            $segments[] = 'updated account password';
+        }
+
+        if (empty($segments)) {
+            return 'Saved account profile with no data changes.';
+        }
+
+        return ucfirst(implode('; ', $segments)) . '.';
+    }
+
     public function accountUpdate(Request $request)
     {
         $adminAuth = $request->session()->get('admin_auth');
@@ -5154,7 +5303,7 @@ class Ctrl extends Controller
         $userRow = DB::connection('mysql')
             ->table('neoura.user as u')
             ->leftJoin('neoura.employer as e', 'e.userid', '=', 'u.userid')
-            ->select('u.userid', 'u.password', 'e.employerid', 'e.email as employer_email', 'e.phonenumber as employer_phone')
+            ->select('u.userid', 'u.password', 'e.employerid', 'e.name as employer_name', 'e.email as employer_email', 'e.phonenumber as employer_phone')
             ->where('u.userid', $adminAuth['userid'] ?? 0)
             ->first();
 
@@ -5166,6 +5315,8 @@ class Ctrl extends Controller
         }
 
         $newPassword = (string) ($validated['new_password'] ?? '');
+        $currentName = trim((string) ($userRow->employer_name ?? ''));
+        $nextName = trim((string) ($validated['name'] ?? ''));
         $currentPhone = trim((string) ($userRow->employer_phone ?? ''));
         $nextPhone = trim((string) ($validated['phonenumber'] ?? ''));
         $isPhoneChanged = $nextPhone !== '' && !hash_equals($currentPhone, $nextPhone);
@@ -5258,6 +5409,23 @@ class Ctrl extends Controller
             $emailVerificationSent = (bool) ($emailQueueResult['sent'] ?? false);
             $emailVerificationReason = (string) ($emailQueueResult['reason'] ?? '');
         }
+
+        $request->attributes->set('activity_action_override', 'Update Account');
+        $request->attributes->set(
+            'activity_detail_override',
+            $this->buildAccountUpdateActivityDetail(
+                $currentName,
+                $nextName,
+                $currentEmail,
+                $nextEmail,
+                $currentPhone,
+                $nextPhone,
+                $isEmailChanged,
+                $isPhoneChanged,
+                $newPassword !== '',
+                $emailVerificationSent
+            )
+        );
 
         $request->session()->put('admin_auth', array_merge($adminAuth, [
             'employer_name' => $validated['name'],
@@ -5480,7 +5648,7 @@ class Ctrl extends Controller
         if ($userId <= 0 || $targetEmail === '') {
             return [
                 'sent' => false,
-                'reason' => 'Invalid password reset request.',
+                'reason' => __('ui.forgot.messages.invalid_reset_request'),
             ];
         }
 
@@ -5490,21 +5658,21 @@ class Ctrl extends Controller
         $appName = trim((string) config('app.name', 'Neora Color Studio')) ?: 'Neora Color Studio';
 
         $message = implode("\n", [
-            "Hello,",
-            "",
-            "We received a request to reset your {$appName} account password.",
-            "",
-            "Reset your password using this secure link:",
+            __('ui.forgot.email.greeting'),
+            '',
+            __('ui.forgot.email.request_received', ['app_name' => $appName]),
+            '',
+            __('ui.forgot.email.reset_instruction'),
             $resetLink,
-            "",
-            "This link expires at " . $expiresAt->format('d M Y H:i:s T') . ".",
-            "If you did not request this reset, you can ignore this email.",
-            "",
-            "Regards,",
-            "{$appName} Support Team",
+            '',
+            __('ui.forgot.email.expiry_notice', ['expires_at' => $expiresAt->format('d M Y H:i:s T')]),
+            __('ui.forgot.email.ignore_notice'),
+            '',
+            __('ui.forgot.email.regards'),
+            __('ui.forgot.email.support_team', ['app_name' => $appName]),
         ]);
 
-        $mailResult = $this->sendBookingEmail($targetEmail, 'Password Reset Request', $message);
+        $mailResult = $this->sendBookingEmail($targetEmail, __('ui.forgot.email.subject'), $message);
         if (!(bool) ($mailResult['sent'] ?? false)) {
             return $mailResult;
         }
@@ -5540,12 +5708,12 @@ class Ctrl extends Controller
     private function forgotPasswordPhoneOtpText(string $otp): string
     {
         return implode("\n", [
-            "Neora Color Studio - Password Reset",
-            "",
-            "Your reset OTP code is: *{$otp}*",
-            "This code is valid for 5 minutes.",
-            "",
-            "Do not share this code with anyone.",
+            __('ui.forgot.whatsapp.title'),
+            '',
+            __('ui.forgot.whatsapp.otp_code', ['otp' => $otp]),
+            __('ui.forgot.whatsapp.valid_for'),
+            '',
+            __('ui.forgot.whatsapp.do_not_share'),
         ]);
     }
 
@@ -5553,7 +5721,7 @@ class Ctrl extends Controller
     {
         $digits = preg_replace('/\D+/', '', trim($phone)) ?? '';
         if ($digits === '') {
-            return 'your phone number';
+            return __('ui.forgot.phone.your_phone_number');
         }
 
         $lastFour = substr($digits, -4);
@@ -5571,7 +5739,7 @@ class Ctrl extends Controller
         $this->grantLoginAccess($request, 900);
 
         $data = [
-            'title' => 'Forgot Password by Email | ' . $website['name'],
+            'title' => __('ui.forgot.email.page_title') . ' | ' . $website['name'],
             'website' => $website,
             'pageScript' => 'forgot-password.js',
         ];
@@ -5588,19 +5756,19 @@ class Ctrl extends Controller
         $targetEmail = trim((string) ($validated['email'] ?? ''));
         $user = $this->forgotPasswordUserByEmail($targetEmail);
         if (!$user) {
-            return back()->with('forgot_popup_error', 'Email is not registered.')->withInput();
+            return back()->with('forgot_popup_error', __('ui.forgot.messages.email_not_registered'))->withInput();
         }
 
         $result = $this->queueForgotPasswordEmailReset((int) ($user->userid ?? 0), (string) ($user->email ?? ''));
         if (!(bool) ($result['sent'] ?? false)) {
             return back()->withErrors([
-                'email' => 'We could not send the reset email right now. Please try again later.',
+                'email' => __('ui.forgot.messages.cannot_send_reset_email'),
             ])->withInput();
         }
 
         return redirect()->route('password.forgot.email')->with(
             'status',
-            'A password reset link has been sent to your email.'
+            __('ui.forgot.messages.reset_link_sent')
         );
     }
 
@@ -5624,13 +5792,13 @@ class Ctrl extends Controller
 
         $this->grantLoginAccess($request, 900);
         $data = [
-            'title' => 'Reset Password | ' . $website['name'],
+            'title' => __('ui.forgot.reset.page_title') . ' | ' . $website['name'],
             'website' => $website,
             'formAction' => route('password.forgot.email.reset.update', ['token' => $tokenValue]),
-            'formTitle' => 'Reset Your Password',
-            'formDescription' => 'Enter your new password for your account.',
+            'formTitle' => __('ui.forgot.reset.form_title_email'),
+            'formDescription' => __('ui.forgot.reset.form_description_email'),
             'backUrl' => route('password.forgot.email'),
-            'backLabel' => 'Back to Forgot Password by Email',
+            'backLabel' => __('ui.forgot.reset.back_to_forgot_email'),
             'pageScript' => 'password-visibility.js',
         ];
 
@@ -5645,7 +5813,7 @@ class Ctrl extends Controller
 
         $tokenValue = trim($token);
         if ($tokenValue === '') {
-            return back()->withErrors(['new_password' => 'Reset token is invalid.']);
+            return back()->withErrors(['new_password' => __('ui.forgot.messages.reset_token_invalid')]);
         }
 
         $rows = $this->pruneForgotPasswordEmailRequests($this->forgotPasswordEmailRequests());
@@ -5661,12 +5829,12 @@ class Ctrl extends Controller
         }
 
         if (!is_array($target)) {
-            return back()->withErrors(['new_password' => 'Reset token is invalid or expired.']);
+            return back()->withErrors(['new_password' => __('ui.forgot.messages.reset_token_invalid_or_expired')]);
         }
 
         $userId = (int) ($target['userid'] ?? 0);
         if ($userId <= 0) {
-            return back()->withErrors(['new_password' => 'Reset token is invalid.']);
+            return back()->withErrors(['new_password' => __('ui.forgot.messages.reset_token_invalid')]);
         }
 
         DB::connection('mysql')
@@ -5682,7 +5850,7 @@ class Ctrl extends Controller
         $this->saveForgotPasswordEmailRequests($rows);
 
         $this->grantLoginAccess($request, 900);
-        return redirect()->route('login')->with('status', 'Password has been reset successfully. Please log in with your new password.');
+        return redirect()->route('login')->with('status', __('ui.forgot.messages.password_reset_success'));
     }
 
     public function forgotPasswordPhone(Request $request)
@@ -5693,7 +5861,7 @@ class Ctrl extends Controller
 
         $this->grantLoginAccess($request, 900);
         $data = [
-            'title' => 'Forgot Password by Phone | ' . $website['name'],
+            'title' => __('ui.forgot.phone.page_title') . ' | ' . $website['name'],
             'website' => $website,
             'showOtpForm' => $showOtpForm,
             'otpMaskedPhone' => $showOtpForm ? $this->maskPhoneNumber((string) ($otpState['phone'] ?? '')) : '',
@@ -5711,12 +5879,12 @@ class Ctrl extends Controller
 
         $user = $this->forgotPasswordUserByPhone((string) ($validated['phonenumber'] ?? ''));
         if (!$user) {
-            return back()->with('forgot_popup_error', 'Phone number is not registered.')->withInput();
+            return back()->with('forgot_popup_error', __('ui.forgot.messages.phone_not_registered'))->withInput();
         }
 
         $targetPhone = trim((string) ($user->employer_phone ?? ''));
         if ($targetPhone === '') {
-            return back()->with('forgot_popup_error', 'Phone number is not registered.')->withInput();
+            return back()->with('forgot_popup_error', __('ui.forgot.messages.phone_not_registered'))->withInput();
         }
 
         $otp = (string) random_int(100000, 999999);
@@ -5724,7 +5892,7 @@ class Ctrl extends Controller
         if (!(bool) ($result['sent'] ?? false)) {
             $reason = trim((string) ($result['reason'] ?? ''));
             return back()->withErrors([
-                'phonenumber' => $reason !== '' ? ('Failed to send OTP: ' . $reason) : 'Failed to send OTP. Please try again.',
+                'phonenumber' => $reason !== '' ? __('ui.forgot.messages.failed_send_otp_with_reason', ['reason' => $reason]) : __('ui.forgot.messages.failed_send_otp'),
             ])->withInput();
         }
 
@@ -5739,7 +5907,7 @@ class Ctrl extends Controller
 
         return redirect()->route('password.forgot.phone')->with(
             'status',
-            'OTP has been sent to your registered phone number.'
+            __('ui.forgot.messages.otp_sent')
         );
     }
 
@@ -5752,21 +5920,21 @@ class Ctrl extends Controller
         $otpState = $request->session()->get('forgot_password_phone_otp');
         if (!is_array($otpState)) {
             return redirect()->route('password.forgot.phone')->withErrors([
-                'otp_code' => 'OTP session not found. Please request a new OTP.',
+                'otp_code' => __('ui.forgot.messages.otp_session_not_found'),
             ]);
         }
 
         if ((int) ($otpState['expires_at'] ?? 0) < time()) {
             $request->session()->forget('forgot_password_phone_otp');
             return redirect()->route('password.forgot.phone')->withErrors([
-                'otp_code' => 'OTP has expired. Please request a new OTP.',
+                'otp_code' => __('ui.forgot.messages.otp_expired'),
             ]);
         }
 
         $otpHash = hash('sha256', (string) ($validated['otp_code'] ?? ''));
         if (!hash_equals((string) ($otpState['otp_hash'] ?? ''), $otpHash)) {
             return redirect()->route('password.forgot.phone')->withErrors([
-                'otp_code' => 'OTP code is invalid.',
+                'otp_code' => __('ui.forgot.messages.otp_invalid'),
             ]);
         }
 
@@ -5782,20 +5950,20 @@ class Ctrl extends Controller
         $verifiedUserId = (int) $request->session()->get('forgot_password_phone_verified_userid', 0);
         if ($verifiedUserId <= 0) {
             return redirect()->route('password.forgot.phone')->withErrors([
-                'otp_code' => 'Please verify OTP first.',
+                'otp_code' => __('ui.forgot.messages.verify_otp_first'),
             ]);
         }
 
         $website = $this->websiteSettings();
         $this->grantLoginAccess($request, 900);
         $data = [
-            'title' => 'Reset Password | ' . $website['name'],
+            'title' => __('ui.forgot.reset.page_title') . ' | ' . $website['name'],
             'website' => $website,
             'formAction' => route('password.forgot.phone.reset.update'),
-            'formTitle' => 'Set a New Password',
-            'formDescription' => 'OTP verification is complete. Enter your new password.',
+            'formTitle' => __('ui.forgot.reset.form_title_phone'),
+            'formDescription' => __('ui.forgot.reset.form_description_phone'),
             'backUrl' => route('password.forgot.phone'),
-            'backLabel' => 'Back to Forgot Password by Phone',
+            'backLabel' => __('ui.forgot.reset.back_to_forgot_phone'),
             'pageScript' => 'password-visibility.js',
         ];
 
@@ -5811,7 +5979,7 @@ class Ctrl extends Controller
         $verifiedUserId = (int) $request->session()->get('forgot_password_phone_verified_userid', 0);
         if ($verifiedUserId <= 0) {
             return redirect()->route('password.forgot.phone')->withErrors([
-                'otp_code' => 'Please verify OTP first.',
+                'otp_code' => __('ui.forgot.messages.verify_otp_first'),
             ]);
         }
 
@@ -5828,7 +5996,7 @@ class Ctrl extends Controller
         ]);
 
         $this->grantLoginAccess($request, 900);
-        return redirect()->route('login')->with('status', 'Password has been reset successfully. Please log in with your new password.');
+        return redirect()->route('login')->with('status', __('ui.forgot.messages.password_reset_success'));
     }
 
     public function login(Request $request)
@@ -6145,6 +6313,37 @@ class Ctrl extends Controller
         }
 
         return redirect()->route('home')->with('status', 'About Us updated.');
+    }
+
+    public function updateContactContent(Request $request)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+
+        $validated = $request->validate([
+            'contact_title' => ['required', 'string', 'max:255'],
+            'contact_description' => ['required', 'string', 'max:3000'],
+        ]);
+
+        $this->saveContactSectionContent([
+            'title' => $validated['contact_title'],
+            'description' => $validated['contact_description'],
+        ]);
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'status' => 'ok',
+                'message' => __('ui.contact.save_success'),
+                'contact_section' => [
+                    'title' => $validated['contact_title'],
+                    'description' => $validated['contact_description'],
+                ],
+            ]);
+        }
+
+        return redirect()->route('home')->with('status', __('ui.contact.save_success'));
     }
 
     public function superAdminPermission(Request $request)

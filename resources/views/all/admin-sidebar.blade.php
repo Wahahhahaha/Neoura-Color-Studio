@@ -60,15 +60,9 @@
                 'key' => 'financial',
                 'label' => 'Financial Report',
                 'title' => 'Financial Report',
-
-                'route_name' => 'admin.financialreport',
-                'href' => route('admin.financial'),
-                'icon' => 'M5 19h14M7 16V8m5 8V5m5 11v-6',
-
                 'route_name' => 'admin.financial',
                 'href' => route('admin.financial'),
                 'icon' => 'M4 18h16M7 14v4m5-8v8m5-5v5M5 6h14',
-
                 'always' => false,
                 'require_permission' => true,
             ],
@@ -148,9 +142,6 @@
                 <p class="admin-role">{{ ucwords($adminRoleName) }}</p>
             @endif
         </div>
-        <button type="button" class="admin-sidebar-toggle" data-sidebar-toggle aria-label="Toggle sidebar" aria-expanded="true">
-            <span></span><span></span><span></span>
-        </button>
     </div>
 
     <div class="admin-sidebar-dual">

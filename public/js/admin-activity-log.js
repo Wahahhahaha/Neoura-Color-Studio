@@ -2,6 +2,7 @@
     const wrap = document.querySelector('[data-activitylog-table-wrap]');
     const feedback = document.querySelector('[data-activitylog-feedback]');
     const fetchUrl = wrap?.getAttribute('data-fetch-url') || '';
+    const loadFailedMessage = wrap?.getAttribute('data-load-failed') || 'Failed to load activity log.';
 
     if (!wrap || !fetchUrl) {
         return;
@@ -45,7 +46,7 @@
 
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || payload?.status !== 'ok') {
-            throw new Error(payload?.message || 'Failed to load activity log.');
+            throw new Error(payload?.message || loadFailedMessage);
         }
 
         wrap.innerHTML = payload?.html || '';
@@ -67,7 +68,7 @@
             clearFeedback();
             await fetchPage(nextPage);
         } catch (error) {
-            setFeedback(error.message || 'Failed to load activity log.', 'error');
+            setFeedback(error.message || loadFailedMessage, 'error');
         }
     });
 })();

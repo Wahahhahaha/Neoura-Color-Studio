@@ -36,6 +36,7 @@ Route::post('/logout', [Ctrl::class, 'logout'])->name('logout');
 Route::post('/admin/logo-click', [Ctrl::class, 'registerLogoClick'])->name('admin.logo.click');
 Route::post('/carousel/update', [Ctrl::class, 'updateCarousel'])->name('carousel.update');
 Route::post('/about/update', [Ctrl::class, 'updateAboutContent'])->name('about.update');
+Route::post('/contact/update', [Ctrl::class, 'updateContactContent'])->name('contact.update');
 Route::get('/service', [Ctrl::class, 'adminService'])->name('admin.service');
 Route::get('/service/export-excel', [Ctrl::class, 'exportServiceExcel'])->name('admin.service.export_excel');
 Route::post('/service/import-excel', [Ctrl::class, 'importServiceExcel'])->name('admin.service.import_excel');

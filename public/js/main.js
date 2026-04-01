@@ -1,4 +1,30 @@
-﻿(() => {
+(() => {
+    const langSwitcher = document.querySelector('.lang-switcher');
+    const navMenuForLangAlign = document.querySelector('.site-header .nav-links');
+
+    const syncLangSwitcherWithNav = () => {
+        if (!langSwitcher || !navMenuForLangAlign) {
+            return;
+        }
+
+        if (window.innerWidth <= 760) {
+            langSwitcher.style.top = '';
+            langSwitcher.style.transform = '';
+            return;
+        }
+
+        const rect = navMenuForLangAlign.getBoundingClientRect();
+        if (!rect || rect.height <= 0) {
+            return;
+        }
+
+        const midY = rect.top + (rect.height / 2);
+        langSwitcher.style.top = `${Math.round(midY)}px`;
+        langSwitcher.style.transform = 'translateY(-50%)';
+    };
+
+    syncLangSwitcherWithNav();
+    window.addEventListener('resize', syncLangSwitcherWithNav);
     const navToggle = document.querySelector('[data-nav-toggle]');
     const navMenu = document.querySelector('[data-nav-menu]');
 
@@ -47,10 +73,18 @@
     const adminSidebar = document.querySelector('[data-admin-sidebar]');
     if (adminSidebar) {
         const homeLayout = adminSidebar.closest('[data-home-layout]');
-        const sidebarToggle = adminSidebar.querySelector('[data-sidebar-toggle]');
+        const adminHeaderShell = document.querySelector('[data-admin-header-shell]');
+        const adminFooterShell = document.querySelector('[data-admin-footer-shell]');
+        const sidebarToggle = document.querySelector('[data-admin-sidebar-toggle]') || adminSidebar.querySelector('[data-sidebar-toggle]');
+        const sidebarScrollArea = adminSidebar.querySelector('.admin-sidebar-dual');
         const iconLinks = Array.from(adminSidebar.querySelectorAll('.admin-tier-one [data-menu-key]'));
         const textLinks = Array.from(adminSidebar.querySelectorAll('.admin-tier-two [data-menu-key]'));
         const storageKey = 'adminSidebarCollapsed';
+
+        const syncAdminShellState = (collapsed) => {
+            adminHeaderShell?.classList.toggle('is-sidebar-collapsed', collapsed);
+            adminFooterShell?.classList.toggle('is-sidebar-collapsed', collapsed);
+        };
 
         const setActive = (menuKey) => {
             iconLinks.forEach((link) => link.classList.toggle('is-active', link.getAttribute('data-menu-key') === menuKey));
@@ -62,12 +96,16 @@
             adminSidebar.classList.add('is-collapsed');
             homeLayout?.classList.add('sidebar-collapsed');
             sidebarToggle?.setAttribute('aria-expanded', 'false');
+            syncAdminShellState(true);
+        } else {
+            syncAdminShellState(false);
         }
 
         sidebarToggle?.addEventListener('click', () => {
             const collapsed = adminSidebar.classList.toggle('is-collapsed');
             homeLayout?.classList.toggle('sidebar-collapsed', collapsed);
             sidebarToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+            syncAdminShellState(collapsed);
             window.localStorage.setItem(storageKey, collapsed ? '1' : '0');
         });
 
@@ -78,6 +116,22 @@
         textLinks.forEach((link) => {
             link.addEventListener('click', () => setActive(link.getAttribute('data-menu-key')));
         });
+
+        if (sidebarScrollArea) {
+            adminSidebar.addEventListener('wheel', (event) => {
+                if (window.innerWidth <= 980) {
+                    return;
+                }
+
+                const maxScroll = sidebarScrollArea.scrollHeight - sidebarScrollArea.clientHeight;
+                if (maxScroll <= 0) {
+                    return;
+                }
+
+                event.preventDefault();
+                sidebarScrollArea.scrollTop += event.deltaY;
+            }, { passive: false });
+        }
 
         const geoStorageKey = 'adminActivityGeoSentAt';
         const nowTs = Date.now();
@@ -410,6 +464,132 @@
             } finally {
                 if (aboutSaveBtn) {
                     aboutSaveBtn.disabled = false;
+                }
+            }
+        });
+    }
+
+    const contactEditorModal = document.querySelector('[data-contact-editor-modal]');
+    const openContactEditor = document.querySelector('[data-open-contact-editor]');
+    if (contactEditorModal && openContactEditor) {
+        const closeContactNodes = Array.from(contactEditorModal.querySelectorAll('[data-close-contact-editor]'));
+        const contactForm = contactEditorModal.querySelector('[data-contact-editor-form]');
+        const contactSaveBtn = contactEditorModal.querySelector('[data-contact-editor-save]');
+        const contactFeedback = contactEditorModal.querySelector('[data-contact-editor-feedback]');
+        const titleInput = contactEditorModal.querySelector('#contact_editor_title');
+        const descriptionInput = contactEditorModal.querySelector('#contact_editor_description');
+        const titleTarget = document.querySelector('[data-contact-section-title]');
+        const descriptionTarget = document.querySelector('[data-contact-section-description]');
+        const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+        let initialTitle = titleInput ? titleInput.value : '';
+        let initialDescription = descriptionInput ? descriptionInput.value : '';
+        let contactCloseTimer = null;
+
+        const setContactFeedback = (type, text) => {
+            if (!contactFeedback) {
+                return;
+            }
+            contactFeedback.hidden = false;
+            contactFeedback.classList.remove('success', 'error');
+            contactFeedback.classList.add(type);
+            contactFeedback.textContent = text;
+        };
+
+        const clearContactFeedback = () => {
+            if (!contactFeedback) {
+                return;
+            }
+            contactFeedback.hidden = true;
+            contactFeedback.classList.remove('success', 'error');
+            contactFeedback.textContent = '';
+        };
+
+        const resetContactModal = () => {
+            if (titleInput) {
+                titleInput.value = initialTitle;
+            }
+            if (descriptionInput) {
+                descriptionInput.value = initialDescription;
+            }
+            clearContactFeedback();
+        };
+
+        const openContactModal = () => {
+            contactEditorModal.hidden = false;
+            contactEditorModal.classList.remove('is-leave');
+            contactEditorModal.classList.remove('is-enter');
+            window.requestAnimationFrame(() => contactEditorModal.classList.add('is-enter'));
+            document.body.style.overflow = 'hidden';
+        };
+
+        const closeContactModal = () => {
+            resetContactModal();
+            contactEditorModal.classList.remove('is-enter');
+            contactEditorModal.classList.add('is-leave');
+            if (contactCloseTimer) {
+                window.clearTimeout(contactCloseTimer);
+            }
+            contactCloseTimer = window.setTimeout(() => {
+                contactEditorModal.hidden = true;
+                contactEditorModal.classList.remove('is-leave');
+                document.body.style.overflow = '';
+            }, 220);
+        };
+
+        openContactEditor.addEventListener('click', openContactModal);
+        closeContactNodes.forEach((node) => node.addEventListener('click', closeContactModal));
+
+        contactForm?.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            clearContactFeedback();
+            if (!contactForm) {
+                return;
+            }
+
+            if (contactSaveBtn) {
+                contactSaveBtn.disabled = true;
+            }
+
+            try {
+                const formData = new FormData(contactForm);
+                const response = await fetch(contactForm.action, {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': csrf,
+                    },
+                    credentials: 'same-origin',
+                });
+
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    const errors = payload?.errors ? Object.values(payload.errors).flat().join(' ') : 'Failed to save Contact section.';
+                    setContactFeedback('error', errors);
+                    return;
+                }
+
+                const sectionTitle = (payload?.contact_section?.title || titleInput?.value || '').trim();
+                const sectionDescription = (payload?.contact_section?.description || descriptionInput?.value || '').trim();
+
+                if (titleTarget) {
+                    titleTarget.textContent = sectionTitle;
+                }
+                if (descriptionTarget) {
+                    descriptionTarget.textContent = sectionDescription;
+                }
+
+                initialTitle = titleInput ? titleInput.value : initialTitle;
+                initialDescription = descriptionInput ? descriptionInput.value : initialDescription;
+
+                setContactFeedback('success', payload?.message || 'Contact section updated.');
+                window.setTimeout(() => closeContactModal(), 260);
+            } catch (_) {
+                setContactFeedback('error', 'Network error while saving Contact section.');
+            } finally {
+                if (contactSaveBtn) {
+                    contactSaveBtn.disabled = false;
                 }
             }
         });

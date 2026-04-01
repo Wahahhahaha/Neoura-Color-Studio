@@ -318,17 +318,68 @@
     <section class="contact section" id="contact">
         <div class="container contact-box fade-in">
             <div>
-                <p class="eyebrow">{{ __('ui.nav.contact') }}</p>
-                <h2>{{ __('ui.home.visit_studio') }}</h2>
-                <p>{{ __('ui.home.contact_description') }}</p>
+                <div class="contact-head-actions">
+                    <p class="eyebrow">{{ __('ui.nav.contact') }}</p>
+                    @if (!empty($showAdminMenu))
+                        <button type="button" class="about-edit-btn" data-open-contact-editor aria-label="{{ __('ui.contact.edit_aria') }}">
+                            <svg viewBox="0 0 24 24" class="admin-icon" aria-hidden="true"><path d="M4 20h4l10-10-4-4L4 16v4zm12-12 2 2"/></svg>
+                        </button>
+                    @endif
+                </div>
+                <h2 data-contact-section-title>{{ $contactSectionContent['title'] ?? __('ui.home.visit_studio') }}</h2>
+                <p data-contact-section-description>{{ $contactSectionContent['description'] ?? __('ui.home.contact_description') }}</p>
             </div>
             <div class="contact-list">
-                <p><strong>{{ __('ui.home.phone') }}:</strong> <a href="tel:{{ preg_replace('/[^0-9+]/', '', $contact['phone']) }}">{{ $contact['phone'] }}</a></p>
-                <p><strong>{{ __('ui.home.instagram') }}:</strong> <a href="https://instagram.com/{{ ltrim($contact['instagram'], '@') }}" target="_blank" rel="noopener">{{ $contact['instagram'] }}</a></p>
-                <p><strong>{{ __('ui.home.studio_address') }}:</strong> {{ $contact['address'] }}</p>
-                <p><a href="{{ $contact['maps'] }}" target="_blank" rel="noopener">{{ __('ui.home.open_google_maps') }}</a></p>
+                <p>
+                    <strong>{{ __('ui.home.phone') }}:</strong>
+                    <a
+                        href="tel:{{ preg_replace('/[^0-9+]/', '', $contact['phone']) }}"
+                        data-contact-phone-link
+                        data-contact-phone-value
+                    >{{ $contact['phone'] }}</a>
+                </p>
+                <p>
+                    <strong>{{ __('ui.home.instagram') }}:</strong>
+                    <a
+                        href="https://instagram.com/{{ ltrim($contact['instagram'], '@') }}"
+                        target="_blank"
+                        rel="noopener"
+                        data-contact-instagram-link
+                        data-contact-instagram-value
+                    >{{ $contact['instagram'] }}</a>
+                </p>
+                <p><strong>{{ __('ui.home.studio_address') }}:</strong> <span data-contact-address-value>{{ $contact['address'] }}</span></p>
+                <p><a href="{{ $contact['maps'] }}" target="_blank" rel="noopener" data-contact-maps-link>{{ __('ui.home.open_google_maps') }}</a></p>
             </div>
         </div>
     </section>
+
+    @if (!empty($showAdminMenu))
+        <div class="crop-modal contact-editor-modal" data-contact-editor-modal hidden>
+            <div class="crop-modal-backdrop" data-close-contact-editor></div>
+            <div class="crop-modal-dialog contact-editor-dialog" role="dialog" aria-modal="true" aria-label="{{ __('ui.contact.edit_aria') }}">
+                <div class="crop-modal-head">
+                    <h2>{{ __('ui.contact.edit_title') }}</h2>
+                    <button type="button" class="crop-close" data-close-contact-editor aria-label="{{ __('ui.contact.close_edit_aria') }}">x</button>
+                </div>
+
+                <form method="post" action="{{ route('contact.update') }}" class="service-modal-form" data-contact-editor-form>
+                    @csrf
+                    <p class="carousel-editor-feedback" data-contact-editor-feedback hidden></p>
+
+                    <label for="contact_editor_title">{{ __('ui.contact.title_label') }}</label>
+                    <input type="text" id="contact_editor_title" name="contact_title" value="{{ old('contact_title', $contactSectionContent['title'] ?? __('ui.home.visit_studio')) }}" required>
+
+                    <label for="contact_editor_description">{{ __('ui.contact.description_label') }}</label>
+                    <textarea id="contact_editor_description" name="contact_description" rows="4" required>{{ old('contact_description', $contactSectionContent['description'] ?? __('ui.home.contact_description')) }}</textarea>
+
+                    <div class="crop-actions">
+                        <button type="button" class="btn btn-outline" data-close-contact-editor>{{ __('ui.home.cancel') }}</button>
+                        <button type="submit" class="btn" data-contact-editor-save>{{ __('ui.contact.save') }}</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    @endif
 </main>
 </div>

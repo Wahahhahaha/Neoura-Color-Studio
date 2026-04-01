@@ -2,9 +2,9 @@
     <div class="container">
         <div class="setting-wrap">
             <div class="section-head">
-                <p class="eyebrow">Superadmin</p>
-                <h1>Sidebar Permission</h1>
-                <p>Set sidebar access rights by level.</p>
+                <p class="eyebrow">{{ __('ui.superadmin.permission.eyebrow') }}</p>
+                <h1>{{ __('ui.superadmin.permission.title') }}</h1>
+                <p>{{ __('ui.superadmin.permission.description') }}</p>
             </div>
 
             @if (session('status'))
@@ -22,11 +22,11 @@
                     <table class="admin-user-table permission-table">
                         <thead>
                             <tr>
-                                <th>Sidebar Menu</th>
-                                <th>Description</th>
-                                <th>Admin</th>
-                                <th>Manager</th>
-                                <th>Superadmin</th>
+                                <th>{{ __('ui.superadmin.permission.sidebar_menu') }}</th>
+                                <th>{{ __('ui.common.description') }}</th>
+                                <th>{{ __('ui.common.admin') }}</th>
+                                <th>{{ __('ui.common.manager') }}</th>
+                                <th>{{ __('ui.common.superadmin') }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -80,7 +80,7 @@
                 </div>
 
                 <div class="setting-actions">
-                    <button type="submit" class="btn">Save Permission</button>
+                    <button type="submit" class="btn">{{ __('ui.superadmin.permission.save') }}</button>
                 </div>
             </form>
         </div>
