@@ -44,7 +44,7 @@
                                         <label class="permission-switch" for="perm_admin_{{ $key }}">
                                             <input type="hidden" name="permissions[admin][{{ $key }}]" value="0">
                                             <input type="checkbox" id="perm_admin_{{ $key }}" name="permissions[admin][{{ $key }}]" value="1" {{ $adminChecked ? 'checked' : '' }}>
-                                            <span>Allow</span>
+                                            
                                         </label>
                                     </td>
                                     <td class="permission-table-cell">
@@ -57,7 +57,7 @@
                                                 value="1"
                                                 {{ $managerChecked ? 'checked' : '' }}
                                             >
-                                            <span>Allow</span>
+                                            
                                         </label>
                                     </td>
                                     <td class="permission-table-cell">
@@ -70,7 +70,7 @@
                                                 value="1"
                                                 {{ $superadminChecked ? 'checked' : '' }}
                                             >
-                                            <span>Allow</span>
+                                            
                                         </label>
                                     </td>
                                 </tr>

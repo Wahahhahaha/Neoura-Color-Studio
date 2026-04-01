@@ -5,10 +5,12 @@
     }
 
     const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+    const nameInput = form.querySelector('#name');
     const phoneInput = form.querySelector('#phonenumber');
     const emailInput = form.querySelector('#email');
     const feedback = form.querySelector('[data-phone-otp-feedback]');
     const saveBtn = form.querySelector('button[type="submit"]');
+    const sidebarAdminName = document.querySelector('[data-sidebar-admin-name]');
     const passwordToggleButtons = Array.from(form.querySelectorAll('[data-toggle-password]'));
 
     const updateUrl = form.getAttribute('data-account-update-url') || form.getAttribute('action') || '';
@@ -51,7 +53,7 @@
             return;
         }
         feedback.textContent = message;
-        feedback.className = isError ? 'form-message error' : 'form-message success';
+        feedback.className = isError ? 'setting-alert error' : 'setting-alert success';
     };
 
     const setSaveButtonState = (disabled) => {
@@ -60,6 +62,15 @@
         }
         saveBtn.disabled = disabled;
         saveBtn.textContent = disabled ? 'Processing...' : 'Save Account';
+    };
+
+    const syncSidebarAdminName = () => {
+        if (!sidebarAdminName) {
+            return;
+        }
+
+        const nextName = (nameInput?.value || '').trim() || 'Admin';
+        sidebarAdminName.textContent = nextName;
     };
 
     const bindPasswordVisibilityToggle = () => {
@@ -289,8 +300,11 @@
             const result = await submitAccountUpdate(pendingFormData);
             initialPhone = phone;
             form.setAttribute('data-initial-phone', initialPhone);
+            initialEmail = (emailInput?.value || '').trim().toLowerCase();
+            form.setAttribute('data-initial-email', initialEmail);
             pendingFormData = null;
             closeOtpModal();
+            syncSidebarAdminName();
             setFeedback(result?.message || 'Account updated successfully.');
             if (pendingEmailChangeNotice) {
                 openEmailNoticeModal(result?.message || 'Your account update has been saved. Please verify your new email using the link we sent.');
@@ -354,6 +368,9 @@
 
         try {
             const result = await submitAccountUpdate(formData);
+            initialEmail = (emailInput?.value || '').trim().toLowerCase();
+            form.setAttribute('data-initial-email', initialEmail);
+            syncSidebarAdminName();
             setFeedback(result?.message || 'Account updated successfully.');
             if (pendingEmailChangeNotice) {
                 openEmailNoticeModal(result?.message || 'Your account update has been saved. Please verify your new email using the link we sent.');

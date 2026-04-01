@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -5127,13 +5128,28 @@ class Ctrl extends Controller
             return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
         }
 
-        $validated = $request->validate([
+        $isAjaxRequest = $request->expectsJson() || $request->ajax();
+        $validator = Validator::make($request->all(), [
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255'],
             'phonenumber' => ['required', 'string', 'max:255'],
             'current_password' => ['nullable', 'string'],
             'new_password' => ['nullable', 'string', 'min:6', 'confirmed'],
         ]);
+        if ($validator->fails()) {
+            if ($isAjaxRequest) {
+                return response()->json([
+                    'message' => (string) $validator->errors()->first(),
+                    'errors' => $validator->errors(),
+                ], 422);
+            }
+
+            return redirect()
+                ->route('account')
+                ->withErrors($validator)
+                ->withInput();
+        }
+        $validated = $validator->validated();
 
         $userRow = DB::connection('mysql')
             ->table('neoura.user as u')
@@ -5143,7 +5159,7 @@ class Ctrl extends Controller
             ->first();
 
         if (!$userRow) {
-            if ($request->expectsJson() || $request->ajax()) {
+            if ($isAjaxRequest) {
                 return response()->json(['message' => 'Account not found.'], 404);
             }
             return redirect()->route('account')->withErrors(['account' => 'Account not found.']);
@@ -5165,7 +5181,7 @@ class Ctrl extends Controller
                 ->exists();
 
             if ($emailUsedByAnotherUser) {
-                if ($request->expectsJson() || $request->ajax()) {
+                if ($isAjaxRequest) {
                     return response()->json(['message' => 'Email is already used by another account.'], 422);
                 }
                 return back()->withErrors(['email' => 'Email is already used by another account.'])->withInput();
@@ -5180,7 +5196,7 @@ class Ctrl extends Controller
                 && (int) ($otpSession['expires_at'] ?? 0) >= time();
 
             if (!$verified) {
-                if ($request->expectsJson() || $request->ajax()) {
+                if ($isAjaxRequest) {
                     return response()->json(['message' => 'Please verify OTP for the new phone number first.'], 422);
                 }
                 return back()->withErrors(['phonenumber' => 'Please verify OTP for the new phone number first.'])->withInput();
@@ -5190,7 +5206,7 @@ class Ctrl extends Controller
         if ($newPassword !== '') {
             $currentPassword = (string) ($validated['current_password'] ?? '');
             if ($currentPassword === '') {
-                if ($request->expectsJson() || $request->ajax()) {
+                if ($isAjaxRequest) {
                     return response()->json(['message' => 'Current password is required to set a new password.'], 422);
                 }
                 return back()->withErrors(['current_password' => 'Current password is required to set a new password.'])->withInput();
@@ -5199,7 +5215,7 @@ class Ctrl extends Controller
             $storedPassword = (string) ($userRow->password ?? '');
             $passwordValid = Hash::check($currentPassword, $storedPassword) || hash_equals($storedPassword, $currentPassword);
             if (!$passwordValid) {
-                if ($request->expectsJson() || $request->ajax()) {
+                if ($isAjaxRequest) {
                     return response()->json(['message' => 'Current password is incorrect.'], 422);
                 }
                 return back()->withErrors(['current_password' => 'Current password is incorrect.'])->withInput();
@@ -5253,7 +5269,7 @@ class Ctrl extends Controller
             $request->session()->forget(['account_phone_otp', 'account_phone_otp_cooldown_until']);
         }
 
-        if ($request->expectsJson() || $request->ajax()) {
+        if ($isAjaxRequest) {
             return response()->json([
                 'status' => 'ok',
                 'message' => $isEmailChanged

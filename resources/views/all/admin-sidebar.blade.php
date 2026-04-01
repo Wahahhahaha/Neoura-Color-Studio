@@ -130,8 +130,24 @@
             })
             ->values()
             ->all();
+
+        $adminDisplayName = trim((string) ($adminAuth['username'] ?? ''));
+        if ($adminDisplayName === '') {
+            $adminDisplayName = trim((string) ($adminAuth['employer_name'] ?? ''));
+        }
+        if ($adminDisplayName === '') {
+            $adminDisplayName = 'Admin';
+        }
+
+        $adminRoleName = trim((string) ($adminAuth['levelname'] ?? ''));
     @endphp
     <div class="admin-sidebar-head">
+        <div class="admin-sidebar-title">
+            <h3>Welcome, <span data-sidebar-admin-name>{{ $adminDisplayName }}</span></h3>
+            @if ($adminRoleName !== '')
+                <p class="admin-role">{{ ucwords($adminRoleName) }}</p>
+            @endif
+        </div>
         <button type="button" class="admin-sidebar-toggle" data-sidebar-toggle aria-label="Toggle sidebar" aria-expanded="true">
             <span></span><span></span><span></span>
         </button>
