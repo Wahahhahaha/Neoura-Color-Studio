@@ -76,7 +76,10 @@
         const adminHeaderShell = document.querySelector('[data-admin-header-shell]');
         const adminFooterShell = document.querySelector('[data-admin-footer-shell]');
         const sidebarToggle = document.querySelector('[data-admin-sidebar-toggle]') || adminSidebar.querySelector('[data-sidebar-toggle]');
+<<<<<<< HEAD
         const sidebarScrollArea = adminSidebar.querySelector('.admin-sidebar-dual');
+=======
+>>>>>>> d72c3a0 (1)
         const iconLinks = Array.from(adminSidebar.querySelectorAll('.admin-tier-one [data-menu-key]'));
         const textLinks = Array.from(adminSidebar.querySelectorAll('.admin-tier-two [data-menu-key]'));
         const storageKey = 'adminSidebarCollapsed';
@@ -86,6 +89,18 @@
             adminFooterShell?.classList.toggle('is-sidebar-collapsed', collapsed);
         };
 
+<<<<<<< HEAD
+=======
+        const syncAdminHeaderOffset = () => {
+            if (!homeLayout || !adminHeaderShell) {
+                return;
+            }
+
+            const headerHeight = Math.max(74, Math.ceil(adminHeaderShell.getBoundingClientRect().height || 0));
+            homeLayout.style.setProperty('--admin-header-offset', `${headerHeight}px`);
+        };
+
+>>>>>>> d72c3a0 (1)
         const setActive = (menuKey) => {
             iconLinks.forEach((link) => link.classList.toggle('is-active', link.getAttribute('data-menu-key') === menuKey));
             textLinks.forEach((link) => link.classList.toggle('is-active', link.getAttribute('data-menu-key') === menuKey));
@@ -117,6 +132,7 @@
             link.addEventListener('click', () => setActive(link.getAttribute('data-menu-key')));
         });
 
+<<<<<<< HEAD
         if (sidebarScrollArea) {
             adminSidebar.addEventListener('wheel', (event) => {
                 if (window.innerWidth <= 980) {
@@ -131,6 +147,14 @@
                 event.preventDefault();
                 sidebarScrollArea.scrollTop += event.deltaY;
             }, { passive: false });
+=======
+        syncAdminHeaderOffset();
+        window.addEventListener('resize', syncAdminHeaderOffset);
+
+        if ('ResizeObserver' in window && adminHeaderShell) {
+            const headerResizeObserver = new ResizeObserver(() => syncAdminHeaderOffset());
+            headerResizeObserver.observe(adminHeaderShell);
+>>>>>>> d72c3a0 (1)
         }
 
         const geoStorageKey = 'adminActivityGeoSentAt';

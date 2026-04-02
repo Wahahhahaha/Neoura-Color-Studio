@@ -90,12 +90,24 @@
                             <form method="post" action="{{ route('admin.payment.update', ['bookingid' => $row['bookingid']]) }}">
                                 @csrf
                                 <input type="hidden" name="action" value="approve">
+<<<<<<< HEAD
+=======
+                                <input type="hidden" name="redirect_status" value="{{ strtolower((string) request()->query('status', '')) }}">
+                                <input type="hidden" name="redirect_bank" value="{{ (string) request()->query('bank', '') }}">
+                                <input type="hidden" name="redirect_page" value="{{ max(1, (int) request()->query('page', 1)) }}">
+>>>>>>> d72c3a0 (1)
                                 <button type="submit" class="btn">{{ __('ui.common.approve') }}</button>
                             </form>
 
                             <form method="post" action="{{ route('admin.payment.update', ['bookingid' => $row['bookingid']]) }}">
                                 @csrf
                                 <input type="hidden" name="action" value="reject">
+<<<<<<< HEAD
+=======
+                                <input type="hidden" name="redirect_status" value="{{ strtolower((string) request()->query('status', '')) }}">
+                                <input type="hidden" name="redirect_bank" value="{{ (string) request()->query('bank', '') }}">
+                                <input type="hidden" name="redirect_page" value="{{ max(1, (int) request()->query('page', 1)) }}">
+>>>>>>> d72c3a0 (1)
                                 <button type="submit" class="btn btn-outline service-delete-btn" @disabled(strtolower($row['status']) === 'rejected')>{{ __('ui.common.reject') }}</button>
                             </form>
                         @endif

@@ -329,6 +329,10 @@ img {
 
 .with-admin-sidebar {
     --sidebar-width: 260px;
+<<<<<<< HEAD
+=======
+    --admin-header-offset: 74px;
+>>>>>>> d72c3a0 (1)
     display: grid;
     grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
     align-items: stretch;
@@ -346,7 +350,11 @@ img {
 
 .admin-sidebar {
     position: fixed;
+<<<<<<< HEAD
     top: 74px;
+=======
+    top: var(--admin-header-offset);
+>>>>>>> d72c3a0 (1)
     left: 0;
     align-self: stretch;
     margin: 0;
@@ -356,8 +364,17 @@ img {
     box-shadow: none;
     padding: 14px 10px;
     width: var(--sidebar-width);
+<<<<<<< HEAD
     height: calc(100vh - 74px);
     overflow: hidden;
+=======
+    height: calc(100vh - var(--admin-header-offset));
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-gutter: stable;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+>>>>>>> d72c3a0 (1)
     transition: padding 0.25s ease;
     display: flex;
     flex-direction: column;
@@ -395,6 +412,7 @@ img {
     grid-template-columns: 56px minmax(0, 1fr);
     gap: 8px;
     min-height: 0;
+<<<<<<< HEAD
     flex: 1 1 0;
     align-items: start;
     overflow-y: auto;
@@ -402,6 +420,11 @@ img {
     scrollbar-gutter: stable;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
+=======
+    flex: 0 0 auto;
+    align-items: start;
+    overflow: visible;
+>>>>>>> d72c3a0 (1)
 }
 
 .admin-tier-one {
@@ -4716,4 +4739,7 @@ img {
         padding: 22px 18px;
     }
 }
+<<<<<<< HEAD
 
+=======
+>>>>>>> d72c3a0 (1)

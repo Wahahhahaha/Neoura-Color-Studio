@@ -3093,6 +3093,10 @@ class Ctrl extends Controller
 
         $validated = $request->validate([
             'action' => ['required', 'in:approve,reject'],
+
+            'redirect_status' => ['nullable', 'in:pending,approved,rejected'],
+            'redirect_bank' => ['nullable', 'string', 'max:100'],
+            'redirect_page' => ['nullable', 'integer', 'min:1'],
         ]);
         $this->ensurePaymentValidationSchema();
 
@@ -3135,7 +3139,25 @@ class Ctrl extends Controller
             }
         });
 
+
         return redirect()->route('admin.payment')->with('status', 'Payment status updated to ' . $nextStatus . '.');
+        $redirectQuery = [];
+        $redirectStatus = strtolower(trim((string) ($validated['redirect_status'] ?? '')));
+        if (in_array($redirectStatus, ['pending', 'approved', 'rejected'], true)) {
+            $redirectQuery['status'] = $redirectStatus;
+        }
+
+        $redirectBank = trim((string) ($validated['redirect_bank'] ?? ''));
+        if ($redirectBank !== '') {
+            $redirectQuery['bank'] = $redirectBank;
+        }
+
+        $redirectPage = (int) ($validated['redirect_page'] ?? 1);
+        if ($redirectPage > 1) {
+            $redirectQuery['page'] = $redirectPage;
+        }
+
+        return redirect()->route('admin.payment', $redirectQuery)->with('status', 'Payment status updated to ' . $nextStatus . '.');
     }
 
     public function adminUserData(Request $request)
