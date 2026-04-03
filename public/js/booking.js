@@ -115,6 +115,31 @@
         return (hours * 60) + minutes;
     };
 
+    const toHm = (minutes) => {
+        if (!Number.isFinite(minutes) || minutes < 0) {
+            return '';
+        }
+
+        const hours = Math.floor(minutes / 60);
+        const mins = minutes % 60;
+        return `${String(hours).padStart(2, '0')}.${String(mins).padStart(2, '0')}`;
+    };
+
+    const toRangeLabel = (startMinutes, duration) => {
+        if (!Number.isFinite(startMinutes) || !Number.isFinite(duration)) {
+            return '';
+        }
+
+        const endMinutes = startMinutes + duration;
+        const startLabel = toHm(startMinutes);
+        const endLabel = toHm(endMinutes);
+        if (!startLabel || !endLabel) {
+            return '';
+        }
+
+        return `${startLabel}-${endLabel}`;
+    };
+
     const openMinutes = toMinutes(schedule.open || '10:00');
     const closeMinutes = toMinutes(schedule.close || '22:00');
     const overlaps = (startA, endA, startB, endB) => startA < endB && startB < endA;
@@ -494,12 +519,18 @@
         const nowMinutes = (now.getHours() * 60) + now.getMinutes();
 
         options.forEach((option) => {
-            const baseLabel = option.getAttribute('data-base-label') || option.textContent.replace(` ${labelFull}`, '');
-            option.setAttribute('data-base-label', baseLabel);
-
             const start = toMinutes(option.value);
             const end = start + durationMinutes;
+            const rangeLabel = toRangeLabel(start, durationMinutes) || option.value;
+            const baseLabel = rangeLabel;
+            option.setAttribute('data-base-label', baseLabel);
             const isPastTimeToday = selectedDate === today && start < nowMinutes;
+            const isAlignedToPackage = (
+                start >= 0
+                && openMinutes >= 0
+                && durationMinutes > 0
+                && (start - openMinutes) % durationMinutes === 0
+            );
             let unavailable = false;
 
             if (start < openMinutes || end > closeMinutes) {
@@ -520,8 +551,8 @@
                 });
             }
 
-            option.hidden = isPastTimeToday;
-            option.disabled = unavailable || isPastTimeToday;
+            option.hidden = isPastTimeToday || !isAlignedToPackage;
+            option.disabled = unavailable || isPastTimeToday || !isAlignedToPackage;
             option.textContent = unavailable && !isPastTimeToday ? `${baseLabel} ${labelFull}` : baseLabel;
         });
 
@@ -599,7 +630,8 @@
             confirmDate.textContent = bookingDate;
         }
         if (confirmTime) {
-            confirmTime.textContent = timeSlot;
+            const displayTime = selectedOption?.getAttribute('data-base-label') || timeSlot;
+            confirmTime.textContent = displayTime;
         }
         if (confirmBank) {
             const bankLabel = bankSelect?.selectedOptions?.[0]?.textContent?.trim() || '-';

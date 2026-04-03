@@ -22,42 +22,47 @@
                 <div class="admin-payment-head">
                     <div class="admin-payment-head-main">
                         <p class="admin-payment-kicker">{{ __('ui.admin.payment.title') }}</p>
-                        <h3>{{ $row['service_name'] }}</h3>
-                        <p class="service-meta">{{ __('ui.admin.payment.booking_code') }}: <strong>{{ $row['booking_code'] }}</strong></p>
+                        <div class="admin-payment-title-row">
+                            <h3>{{ $row['service_name'] }}</h3>
+                            <span class="admin-payment-booking-pill">{{ $row['booking_code'] }}</span>
+                        </div>
                     </div>
                     <span class="admin-payment-status {{ $statusClass }}">{{ $statusLabel }}</span>
                 </div>
 
-                <div class="admin-payment-grid" role="list">
-                    <div class="admin-payment-cell" role="listitem">
+                <div class="admin-payment-quick-grid" role="list">
+                    <div class="admin-payment-quick-item" role="listitem">
                         <span>{{ __('ui.common.name') }}</span>
                         <strong>{{ $row['name'] }}</strong>
                     </div>
-                    <div class="admin-payment-cell" role="listitem">
-                        <span>{{ __('ui.common.email') }}</span>
-                        <strong>{{ $row['email'] }}</strong>
-                    </div>
-                    <div class="admin-payment-cell" role="listitem">
-                        <span>{{ __('ui.common.phone') }}</span>
-                        <strong>{{ $row['phone'] }}</strong>
-                    </div>
-                    <div class="admin-payment-cell" role="listitem">
-                        <span>{{ __('ui.admin.payment.booking_date') }}</span>
-                        <strong>{{ $row['booking_date'] }}</strong>
-                    </div>
-                    <div class="admin-payment-cell" role="listitem">
-                        <span>{{ __('ui.admin.payment.session_time') }}</span>
-                        <strong>{{ $row['start_time'] }} - {{ $row['end_time'] }}</strong>
-                    </div>
-                    <div class="admin-payment-cell" role="listitem">
-                        <span>{{ __('ui.admin.payment.payment_date') }}</span>
-                        <strong>{{ $row['payment_date'] }}</strong>
-                    </div>
-                    <div class="admin-payment-cell" role="listitem">
+                    <div class="admin-payment-quick-item" role="listitem">
                         <span>{{ __('ui.common.bank') }}</span>
                         <strong>{{ $row['bank'] }}</strong>
                     </div>
-                    <div class="admin-payment-cell" role="listitem">
+                    <div class="admin-payment-quick-item" role="listitem">
+                        <span>{{ __('ui.admin.payment.booking_date') }}</span>
+                        <strong>{{ $row['booking_date'] }}</strong>
+                    </div>
+                    <div class="admin-payment-quick-item" role="listitem">
+                        <span>{{ __('ui.admin.payment.session_time') }}</span>
+                        <strong>{{ $row['start_time'] }} - {{ $row['end_time'] }}</strong>
+                    </div>
+                </div>
+
+                <div class="admin-payment-info-list" role="list">
+                    <div class="admin-payment-info-item" role="listitem">
+                        <span>{{ __('ui.common.email') }}</span>
+                        <strong>{{ $row['email'] }}</strong>
+                    </div>
+                    <div class="admin-payment-info-item" role="listitem">
+                        <span>{{ __('ui.common.phone') }}</span>
+                        <strong>{{ $row['phone'] }}</strong>
+                    </div>
+                    <div class="admin-payment-info-item" role="listitem">
+                        <span>{{ __('ui.admin.payment.payment_date') }}</span>
+                        <strong>{{ $row['payment_date'] }}</strong>
+                    </div>
+                    <div class="admin-payment-info-item" role="listitem">
                         <span>{{ __('ui.admin.payment.proof_status') }}</span>
                         <strong>{{ !empty($row['proof_url']) ? __('ui.common.available') : __('ui.common.missing') }}</strong>
                     </div>
@@ -87,27 +92,21 @@
 
                     <div class="admin-payment-actions">
                         @if (strtolower((string) ($row['status'] ?? '')) !== 'approved')
-                            <form method="post" action="{{ route('admin.payment.update', ['bookingid' => $row['bookingid']]) }}">
+                            <form method="post" action="{{ route('admin.payment.update', ['bookingid' => $row['bookingid']]) }}" class="admin-payment-action-form">
                                 @csrf
                                 <input type="hidden" name="action" value="approve">
-<<<<<<< HEAD
-=======
                                 <input type="hidden" name="redirect_status" value="{{ strtolower((string) request()->query('status', '')) }}">
                                 <input type="hidden" name="redirect_bank" value="{{ (string) request()->query('bank', '') }}">
                                 <input type="hidden" name="redirect_page" value="{{ max(1, (int) request()->query('page', 1)) }}">
->>>>>>> d72c3a0 (1)
                                 <button type="submit" class="btn">{{ __('ui.common.approve') }}</button>
                             </form>
 
-                            <form method="post" action="{{ route('admin.payment.update', ['bookingid' => $row['bookingid']]) }}">
+                            <form method="post" action="{{ route('admin.payment.update', ['bookingid' => $row['bookingid']]) }}" class="admin-payment-action-form">
                                 @csrf
                                 <input type="hidden" name="action" value="reject">
-<<<<<<< HEAD
-=======
                                 <input type="hidden" name="redirect_status" value="{{ strtolower((string) request()->query('status', '')) }}">
                                 <input type="hidden" name="redirect_bank" value="{{ (string) request()->query('bank', '') }}">
                                 <input type="hidden" name="redirect_page" value="{{ max(1, (int) request()->query('page', 1)) }}">
->>>>>>> d72c3a0 (1)
                                 <button type="submit" class="btn btn-outline service-delete-btn" @disabled(strtolower($row['status']) === 'rejected')>{{ __('ui.common.reject') }}</button>
                             </form>
                         @endif

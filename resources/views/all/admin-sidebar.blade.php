@@ -8,8 +8,8 @@
         $menuItems = [
             [
                 'key' => 'home',
-                'label' => 'Home',
-                'title' => 'Home',
+                'label' => 'Dashboard',
+                'title' => 'Dashboard',
                 'route_name' => 'home',
                 'href' => route('home'),
                 'icon' => 'M3 10.5 12 3l9 7.5M6 9.5V20h12V9.5',

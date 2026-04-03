@@ -224,7 +224,7 @@
                                 </ul>
                             @endif
                             <p class="service-meta">{{ __('ui.home.duration') }}: {{ $service['duration'] }}</p>
-                            <p class="service-price">{{ __('ui.home.price') }}: {{ $service['price'] }}</p>
+                            <p class="service-price">{{ __('ui.home.price') }}: {{ $service['price_display'] ?? $service['price'] }}</p>
                             <div class="card-actions">
                                 <a href="{{ route('booking', ['plan' => $service['name']]) }}" class="btn">{{ __('ui.home.booking') }}</a>
                             </div>
@@ -349,6 +349,14 @@
                     >{{ $contact['instagram'] }}</a>
                 </p>
                 <p><strong>{{ __('ui.home.studio_address') }}:</strong> <span data-contact-address-value>{{ $contact['address'] }}</span></p>
+                <p>
+                    <strong>{{ __('ui.home.operational_hours') }}:</strong>
+                    <span>
+                        {{ str_replace(':', '.', (string) ($website['operational_open'] ?? '10:00')) }}
+                        -
+                        {{ str_replace(':', '.', (string) ($website['operational_close'] ?? '22:00')) }}
+                    </span>
+                </p>
                 <p><a href="{{ $contact['maps'] }}" target="_blank" rel="noopener" data-contact-maps-link>{{ __('ui.home.open_google_maps') }}</a></p>
             </div>
         </div>

@@ -76,21 +76,17 @@
         const adminHeaderShell = document.querySelector('[data-admin-header-shell]');
         const adminFooterShell = document.querySelector('[data-admin-footer-shell]');
         const sidebarToggle = document.querySelector('[data-admin-sidebar-toggle]') || adminSidebar.querySelector('[data-sidebar-toggle]');
-<<<<<<< HEAD
         const sidebarScrollArea = adminSidebar.querySelector('.admin-sidebar-dual');
-=======
->>>>>>> d72c3a0 (1)
         const iconLinks = Array.from(adminSidebar.querySelectorAll('.admin-tier-one [data-menu-key]'));
         const textLinks = Array.from(adminSidebar.querySelectorAll('.admin-tier-two [data-menu-key]'));
         const storageKey = 'adminSidebarCollapsed';
+        const isMobileViewport = () => window.innerWidth <= 980;
 
         const syncAdminShellState = (collapsed) => {
             adminHeaderShell?.classList.toggle('is-sidebar-collapsed', collapsed);
             adminFooterShell?.classList.toggle('is-sidebar-collapsed', collapsed);
         };
 
-<<<<<<< HEAD
-=======
         const syncAdminHeaderOffset = () => {
             if (!homeLayout || !adminHeaderShell) {
                 return;
@@ -100,28 +96,41 @@
             homeLayout.style.setProperty('--admin-header-offset', `${headerHeight}px`);
         };
 
->>>>>>> d72c3a0 (1)
         const setActive = (menuKey) => {
             iconLinks.forEach((link) => link.classList.toggle('is-active', link.getAttribute('data-menu-key') === menuKey));
             textLinks.forEach((link) => link.classList.toggle('is-active', link.getAttribute('data-menu-key') === menuKey));
         };
 
+        const applyCollapsedState = (collapsed, persist = true) => {
+            if (collapsed) {
+                adminSidebar.classList.add('is-collapsed');
+                homeLayout?.classList.add('sidebar-collapsed');
+                sidebarToggle?.setAttribute('aria-expanded', 'false');
+                syncAdminShellState(true);
+            } else {
+                adminSidebar.classList.remove('is-collapsed');
+                homeLayout?.classList.remove('sidebar-collapsed');
+                sidebarToggle?.setAttribute('aria-expanded', 'true');
+                syncAdminShellState(false);
+            }
+
+            if (persist) {
+                window.localStorage.setItem(storageKey, collapsed ? '1' : '0');
+            }
+        };
+
         const savedState = window.localStorage.getItem(storageKey);
-        if (savedState === '1') {
-            adminSidebar.classList.add('is-collapsed');
-            homeLayout?.classList.add('sidebar-collapsed');
-            sidebarToggle?.setAttribute('aria-expanded', 'false');
-            syncAdminShellState(true);
+        if (isMobileViewport()) {
+            applyCollapsedState(true, false);
+        } else if (savedState === '1') {
+            applyCollapsedState(true, false);
         } else {
-            syncAdminShellState(false);
+            applyCollapsedState(false, false);
         }
 
         sidebarToggle?.addEventListener('click', () => {
-            const collapsed = adminSidebar.classList.toggle('is-collapsed');
-            homeLayout?.classList.toggle('sidebar-collapsed', collapsed);
-            sidebarToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-            syncAdminShellState(collapsed);
-            window.localStorage.setItem(storageKey, collapsed ? '1' : '0');
+            const collapsed = !adminSidebar.classList.contains('is-collapsed');
+            applyCollapsedState(collapsed);
         });
 
         iconLinks.forEach((link) => {
@@ -132,7 +141,6 @@
             link.addEventListener('click', () => setActive(link.getAttribute('data-menu-key')));
         });
 
-<<<<<<< HEAD
         if (sidebarScrollArea) {
             adminSidebar.addEventListener('wheel', (event) => {
                 if (window.innerWidth <= 980) {
@@ -147,14 +155,30 @@
                 event.preventDefault();
                 sidebarScrollArea.scrollTop += event.deltaY;
             }, { passive: false });
-=======
+        }
+
         syncAdminHeaderOffset();
         window.addEventListener('resize', syncAdminHeaderOffset);
+
+        let wasMobileViewport = isMobileViewport();
+        window.addEventListener('resize', () => {
+            const isMobileNow = isMobileViewport();
+            if (isMobileNow === wasMobileViewport) {
+                return;
+            }
+
+            wasMobileViewport = isMobileNow;
+            if (isMobileNow) {
+                applyCollapsedState(true, false);
+                return;
+            }
+
+            applyCollapsedState(window.localStorage.getItem(storageKey) === '1', false);
+        });
 
         if ('ResizeObserver' in window && adminHeaderShell) {
             const headerResizeObserver = new ResizeObserver(() => syncAdminHeaderOffset());
             headerResizeObserver.observe(adminHeaderShell);
->>>>>>> d72c3a0 (1)
         }
 
         const geoStorageKey = 'adminActivityGeoSentAt';

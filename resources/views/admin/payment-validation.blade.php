@@ -1,11 +1,20 @@
 <section class="section">
     <div class="container">
+        @php
+            $paymentTotal = (int) ($paymentPagination['total'] ?? 0);
+            $statusFilter = strtolower((string) ($selectedStatus ?? ''));
+        @endphp
         <div class="setting-wrap">
             <div class="section-head admin-payment-hero">
-                <div>
+                <div class="admin-payment-hero-copy">
                     <p class="eyebrow">{{ __('ui.admin.payment.eyebrow') }}</p>
                     <h1>{{ __('ui.admin.payment.title') }}</h1>
                     <p>{{ __('ui.admin.payment.description') }}</p>
+                </div>
+                <div class="admin-payment-hero-summary">
+                    <span class="admin-payment-total-pill">
+                        {{ $paymentTotal }} {{ $paymentTotal === 1 ? 'Request' : 'Requests' }}
+                    </span>
                 </div>
             </div>
 
@@ -19,10 +28,7 @@
 
             <div class="admin-payment-shell">
                 <div class="admin-payment-toolbar">
-                    @php
-                        $statusFilter = strtolower((string) ($selectedStatus ?? ''));
-                    @endphp
-                    <div class="admin-service-card-actions" data-payment-status-filter>
+                    <div class="admin-payment-status-filter" data-payment-status-filter>
                         <button type="button" class="btn btn-outline {{ $statusFilter === '' ? 'is-active' : '' }}" data-payment-status="">{{ __('ui.common.all') }}</button>
                         <button type="button" class="btn btn-outline {{ $statusFilter === 'pending' ? 'is-active' : '' }}" data-payment-status="pending">{{ __('ui.common.pending') }}</button>
                         <button type="button" class="btn btn-outline {{ $statusFilter === 'approved' ? 'is-active' : '' }}" data-payment-status="approved">{{ __('ui.common.approved') }}</button>

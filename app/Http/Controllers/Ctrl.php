@@ -236,7 +236,7 @@ class Ctrl extends Controller
 
     private function servicePackages(): array
     {
-        return [
+        $packages = [
             'Basic Session' => [
                 'name' => 'Basic Session',
                 'duration' => '60 minutes',
@@ -271,6 +271,13 @@ class Ctrl extends Controller
                 ],
             ],
         ];
+
+        foreach ($packages as $name => $package) {
+            $price = trim((string) ($package['price'] ?? ''));
+            $packages[$name]['price_display'] = $this->formatRupiahLabel($price);
+        }
+
+        return $packages;
     }
 
     private function sidebarServices(): array
@@ -343,6 +350,7 @@ class Ctrl extends Controller
                 'detail' => trim((string) ($service->detail ?? '')),
                 'duration' => trim((string) $service->duration),
                 'price' => trim((string) $service->price),
+                'price_display' => $this->formatRupiahLabel((string) $service->price),
                 'descriptions' => $descriptions,
             ];
         })->all();
@@ -662,6 +670,7 @@ class Ctrl extends Controller
                 'name' => $name,
                 'duration' => (string) ($row['duration'] ?? ''),
                 'price' => (string) ($row['price'] ?? ''),
+                'price_display' => (string) ($row['price_display'] ?? $this->formatRupiahLabel((string) ($row['price'] ?? ''))),
                 'description' => (string) ($row['detail'] ?? (!empty($descriptions) ? (string) $descriptions[0] : 'Service details are available in the description list.')),
                 'includes' => array_values($descriptions),
             ];
@@ -703,9 +712,11 @@ class Ctrl extends Controller
             ->map(function ($row) {
                 $start = substr((string) ($row->start_time ?? ''), 0, 5);
                 $end = substr((string) ($row->end_time ?? ''), 0, 5);
+                $bookingDateRaw = trim((string) ($row->date ?? ''));
+                $bookingDate = substr($bookingDateRaw, 0, 10);
 
                 return [
-                    'booking_date' => (string) ($row->date ?? ''),
+                    'booking_date' => $bookingDate,
                     'start_time' => $start,
                     'end_time' => $end,
                 ];
@@ -744,6 +755,16 @@ class Ctrl extends Controller
         $hours = intdiv($minutes, 60);
         $mins = $minutes % 60;
         return sprintf('%02d:%02d', $hours, $mins);
+    }
+
+    private function normalizeOperationalTime(?string $value, string $fallback): string
+    {
+        $normalized = trim((string) $value);
+        if (preg_match('/^([01]\d|2[0-3]):([0-5]\d)$/', $normalized) === 1) {
+            return $normalized;
+        }
+
+        return $fallback;
     }
 
     private function toSlotLabel(string $hhmm): string
@@ -1880,6 +1901,8 @@ class Ctrl extends Controller
                 'theme_color_bold' => $accentBoldColor,
                 'theme_color' => $accentSoftColor,
                 'theme_color_strong' => $accentBoldColor,
+                'operational_open' => '10:00',
+                'operational_close' => '22:00',
                 'show_name_in_brand' => (bool) ($brandDisplay['show_name_in_brand'] ?? $this->defaultBrandNameVisible()),
             ];
         }
@@ -1893,6 +1916,12 @@ class Ctrl extends Controller
 
         $address = (string) ($system->systemaddress ?? '');
         $mapsQuery = trim($address) !== '' ? urlencode($address) : 'Kemang+Raya+18+Jakarta';
+        $operationalOpen = $this->normalizeOperationalTime($system->operational_open ?? null, '10:00');
+        $operationalClose = $this->normalizeOperationalTime($system->operational_close ?? null, '22:00');
+        if ($this->toMinutes($operationalClose) <= $this->toMinutes($operationalOpen)) {
+            $operationalOpen = '10:00';
+            $operationalClose = '22:00';
+        }
 
         return [
             'systemid' => $system->systemid,
@@ -1915,6 +1944,8 @@ class Ctrl extends Controller
             'theme_color_bold' => $accentBoldColor,
             'theme_color' => $accentSoftColor,
             'theme_color_strong' => $accentBoldColor,
+            'operational_open' => $operationalOpen,
+            'operational_close' => $operationalClose,
             'show_name_in_brand' => (bool) ($brandDisplay['show_name_in_brand'] ?? $this->defaultBrandNameVisible()),
         ];
     }
@@ -2040,6 +2071,12 @@ class Ctrl extends Controller
 
         $bookingRecords = $this->bookedSlots();
         $website = $this->websiteSettings();
+        $operationalOpen = $this->normalizeOperationalTime((string) ($website['operational_open'] ?? ''), '10:00');
+        $operationalClose = $this->normalizeOperationalTime((string) ($website['operational_close'] ?? ''), '22:00');
+        if ($this->toMinutes($operationalClose) <= $this->toMinutes($operationalOpen)) {
+            $operationalOpen = '10:00';
+            $operationalClose = '22:00';
+        }
 
         $data = [
             'title' => 'Booking | ' . $website['name'],
@@ -2054,10 +2091,10 @@ class Ctrl extends Controller
             'bookingPackage' => $bookingPackage,
             'bookingDate' => $bookingDate,
             'bookingDurationMinutes' => $bookingDurationMinutes,
-            'bookingTimeOptions' => $this->timeOptions(),
+            'bookingTimeOptions' => $this->timeOptions($operationalOpen, $operationalClose),
             'bookingSchedule' => [
-                'open' => '10:00',
-                'close' => '22:00',
+                'open' => $operationalOpen,
+                'close' => $operationalClose,
                 'step' => 30,
                 'records' => array_map(function (array $booking) {
                     return [
@@ -2091,6 +2128,12 @@ class Ctrl extends Controller
         $website = $this->websiteSettings();
         $studioName = (string) ($website['name'] ?? 'Neora Color Studio');
         $bookingCode = $this->generateBookingCode();
+        $operationalOpen = $this->normalizeOperationalTime((string) ($website['operational_open'] ?? ''), '10:00');
+        $operationalClose = $this->normalizeOperationalTime((string) ($website['operational_close'] ?? ''), '22:00');
+        if ($this->toMinutes($operationalClose) <= $this->toMinutes($operationalOpen)) {
+            $operationalOpen = '10:00';
+            $operationalClose = '22:00';
+        }
 
         $validated = $request->validate([
             'full_name' => ['required', 'string', 'max:255'],
@@ -2102,8 +2145,8 @@ class Ctrl extends Controller
             'payment_proof' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:4096'],
         ]);
 
-        $openMinutes = $this->toMinutes('10:00');
-        $closeMinutes = $this->toMinutes('22:00');
+        $openMinutes = $this->toMinutes($operationalOpen);
+        $closeMinutes = $this->toMinutes($operationalClose);
         $startMinutes = $this->toMinutes($validated['time_slot']);
         $endMinutes = $startMinutes + $durationMinutes;
         $todayDate = now()->toDateString();
@@ -2124,7 +2167,7 @@ class Ctrl extends Controller
         $existingSlots = DB::connection('mysql')
             ->table('neoura.timeslot')
             ->select('start_time', 'end_time')
-            ->where('date', $validated['booking_date'])
+            ->whereRaw('DATE(date) = ?', [$validated['booking_date']])
             ->where('is_booked', 1)
             ->get();
 
@@ -3904,6 +3947,21 @@ class Ctrl extends Controller
         return 'Rp ' . number_format(max(0, $amount), 0, ',', '.');
     }
 
+    private function formatRupiahLabel(string $rawPrice): string
+    {
+        $price = trim($rawPrice);
+        if ($price === '') {
+            return '-';
+        }
+
+        $amount = $this->parseRupiahAmount($price);
+        if ($amount <= 0) {
+            return $price;
+        }
+
+        return $this->formatRupiah($amount);
+    }
+
     private function approvedPaymentIncomeEntries(): array
     {
         $this->ensurePaymentValidationSchema();
@@ -3913,16 +3971,18 @@ class Ctrl extends Controller
             ->join('neoura.booking as b', 'b.bookingid', '=', 'p.bookingid')
             ->leftJoin('neoura.service as s', 's.serviceid', '=', 'b.serviceid')
             ->select(
+                'p.paymentdate',
                 'p.validated_at',
                 's.price as service_price'
             )
             ->whereRaw('LOWER(TRIM(COALESCE(b.status, ""))) = ?', ['approved'])
-            ->whereNotNull('p.validated_at')
-            ->orderBy('p.validated_at')
+            ->orderByRaw('COALESCE(p.validated_at, p.paymentdate) ASC')
             ->get()
             ->map(function ($row) {
+                $paymentDateRaw = trim((string) ($row->paymentdate ?? ''));
                 $validatedAtRaw = trim((string) ($row->validated_at ?? ''));
-                $timestamp = strtotime($validatedAtRaw);
+                $sourceDateRaw = $validatedAtRaw !== '' ? $validatedAtRaw : $paymentDateRaw;
+                $timestamp = strtotime($sourceDateRaw);
                 $paymentDate = $timestamp !== false ? date('Y-m-d', $timestamp) : '';
                 $amount = $this->parseRupiahAmount((string) ($row->service_price ?? ''));
 
@@ -4076,6 +4136,162 @@ class Ctrl extends Controller
         }, 0);
     }
 
+    private function expenseTotalForYear(int $year): int
+    {
+        return (int) DB::connection('mysql')
+            ->table('neoura.expense')
+            ->where('expense_year', $year)
+            ->sum(DB::raw('CAST(REGEXP_REPLACE(COALESCE(cost, "0"), "[^0-9]", "") AS UNSIGNED)'));
+    }
+
+    private function expenseTotalAllTime(): int
+    {
+        return (int) DB::connection('mysql')
+            ->table('neoura.expense')
+            ->sum(DB::raw('CAST(REGEXP_REPLACE(COALESCE(cost, "0"), "[^0-9]", "") AS UNSIGNED)'));
+    }
+
+    private function expenseByMonthMapForYear(int $year): array
+    {
+        $rows = DB::connection('mysql')
+            ->table('neoura.expense')
+            ->select(
+                'expense_month',
+                DB::raw('SUM(CAST(REGEXP_REPLACE(COALESCE(cost, "0"), "[^0-9]", "") AS UNSIGNED)) AS total_cost')
+            )
+            ->where('expense_year', $year)
+            ->groupBy('expense_month')
+            ->get();
+
+        $result = [];
+        foreach ($rows as $row) {
+            $month = (int) ($row->expense_month ?? 0);
+            if ($month < 1 || $month > 12) {
+                continue;
+            }
+
+            $period = sprintf('%04d-%02d', $year, $month);
+            $result[$period] = (int) ($row->total_cost ?? 0);
+        }
+
+        return $result;
+    }
+
+    private function expenseByYearMap(): array
+    {
+        $rows = DB::connection('mysql')
+            ->table('neoura.expense')
+            ->select(
+                'expense_year',
+                DB::raw('SUM(CAST(REGEXP_REPLACE(COALESCE(cost, "0"), "[^0-9]", "") AS UNSIGNED)) AS total_cost')
+            )
+            ->groupBy('expense_year')
+            ->get();
+
+        $result = [];
+        foreach ($rows as $row) {
+            $year = (int) ($row->expense_year ?? 0);
+            if ($year < 2000 || $year > 3000) {
+                continue;
+            }
+
+            $result[(string) $year] = (int) ($row->total_cost ?? 0);
+        }
+
+        return $result;
+    }
+
+    private function buildFinancialChartPayload(
+        string $reportType,
+        int $selectedYear,
+        int $selectedMonth,
+        array $reportData,
+        int $currentIncomeValue,
+        int $currentOutcomeValue
+    ): array {
+        $type = strtolower(trim($reportType));
+        $labels = [];
+        $incomeValues = [];
+        $outcomeValues = [];
+
+        if ($type === 'monthly') {
+            $expenseByMonth = $this->expenseByMonthMapForYear($selectedYear);
+            $rows = collect($reportData['monthlyRows'] ?? [])
+                ->sortBy(fn($row) => (string) ($row['period'] ?? ''))
+                ->values()
+                ->all();
+
+            foreach ($rows as $row) {
+                $period = (string) ($row['period'] ?? '');
+                $labels[] = (string) ($row['label'] ?? $period);
+                $incomeValues[] = (int) ($row['income'] ?? 0);
+                $outcomeValues[] = (int) ($expenseByMonth[$period] ?? 0);
+            }
+        } elseif ($type === 'yearly') {
+            $expenseByYear = $this->expenseByYearMap();
+            $rows = collect($reportData['yearlyRows'] ?? [])
+                ->sortBy(fn($row) => (string) ($row['period'] ?? ''))
+                ->values()
+                ->all();
+
+            foreach ($rows as $row) {
+                $period = (string) ($row['period'] ?? '');
+                $labels[] = (string) ($row['label'] ?? $period);
+                $incomeValues[] = (int) ($row['income'] ?? 0);
+                $outcomeValues[] = (int) ($expenseByYear[$period] ?? 0);
+            }
+        } else {
+            $rows = collect($reportData['dailyChartRows'] ?? ($reportData['dailyRows'] ?? []))
+                ->sortBy(fn($row) => (string) ($row['period'] ?? ''))
+                ->values()
+                ->all();
+
+            foreach ($rows as $row) {
+                $labels[] = (string) ($row['chart_label'] ?? ($row['label'] ?? ''));
+                $incomeValues[] = (int) ($row['income'] ?? 0);
+                $outcomeValues[] = (int) ($reportData['totalExpenseValue'] ?? 0);
+            }
+        }
+
+        if (empty($labels)) {
+            $labels = [
+                $type === 'monthly'
+                    ? (string) $selectedYear
+                    : ($type === 'yearly'
+                        ? 'All Time'
+                        : date('F Y', mktime(0, 0, 0, $selectedMonth, 1, $selectedYear))),
+            ];
+            $incomeValues = [$currentIncomeValue];
+            $outcomeValues = [$currentOutcomeValue];
+        }
+
+        return [
+            'labels' => $labels,
+            'incomeValues' => $incomeValues,
+            'outcomeValues' => $outcomeValues,
+        ];
+    }
+
+    private function incomeTotalForReportType(string $reportType, array $reportData): int
+    {
+        $type = strtolower(trim($reportType));
+        if ($type === 'monthly') {
+            return (int) array_reduce($reportData['monthlyRows'] ?? [], function ($carry, $row) {
+                return $carry + (int) ($row['income'] ?? 0);
+            }, 0);
+        }
+
+        if ($type === 'yearly') {
+            return (int) array_reduce($reportData['yearlyRows'] ?? [], function ($carry, $row) {
+                return $carry + (int) ($row['income'] ?? 0);
+            }, 0);
+        }
+
+        return (int) array_reduce($reportData['dailyRows'] ?? [], function ($carry, $row) {
+            return $carry + (int) ($row['income'] ?? 0);
+        }, 0);
+    }
+
     public function adminFinancialReport(Request $request)
     {
         $adminAuth = $request->session()->get('admin_auth');
@@ -4100,6 +4316,46 @@ class Ctrl extends Controller
             (int) $filters['selectedYear'],
             (int) $filters['selectedMonth']
         );
+        $currentIncomeValue = $this->incomeTotalForReportType((string) $filters['reportType'], $reportData);
+        $currentOutcomeValue = (int) $reportData['totalExpenseValue'];
+        $reportType = strtolower((string) $filters['reportType']);
+        if ($reportType === 'monthly') {
+            $currentOutcomeValue = $this->expenseTotalForYear((int) $filters['selectedYear']);
+        } elseif ($reportType === 'yearly') {
+            $currentOutcomeValue = $this->expenseTotalAllTime();
+        }
+        $chartPayload = $this->buildFinancialChartPayload(
+            (string) $filters['reportType'],
+            (int) $filters['selectedYear'],
+            (int) $filters['selectedMonth'],
+            $reportData,
+            $currentIncomeValue,
+            $currentOutcomeValue
+        );
+        $chartPayloadDaily = $this->buildFinancialChartPayload(
+            'daily',
+            (int) $filters['selectedYear'],
+            (int) $filters['selectedMonth'],
+            $reportData,
+            $this->incomeTotalForReportType('daily', $reportData),
+            (int) ($reportData['totalExpenseValue'] ?? 0)
+        );
+        $chartPayloadMonthly = $this->buildFinancialChartPayload(
+            'monthly',
+            (int) $filters['selectedYear'],
+            (int) $filters['selectedMonth'],
+            $reportData,
+            $this->incomeTotalForReportType('monthly', $reportData),
+            $this->expenseTotalForYear((int) $filters['selectedYear'])
+        );
+        $chartPayloadYearly = $this->buildFinancialChartPayload(
+            'yearly',
+            (int) $filters['selectedYear'],
+            (int) $filters['selectedMonth'],
+            $reportData,
+            $this->incomeTotalForReportType('yearly', $reportData),
+            $this->expenseTotalAllTime()
+        );
 
         $data = [
             'title' => 'Financial Report | ' . $website['name'],
@@ -4122,6 +4378,22 @@ class Ctrl extends Controller
             'netIncomeLabel' => $reportData['netIncomeLabel'],
             'monthName' => $reportData['monthName'],
             'summaryCards' => $reportData['summaryCards'],
+            'currentIncomeValue' => $currentIncomeValue,
+            'currentIncomeLabel' => $this->formatRupiah($currentIncomeValue),
+            'currentOutcomeValue' => $currentOutcomeValue,
+            'currentOutcomeLabel' => $this->formatRupiah($currentOutcomeValue),
+            'chartLabels' => $chartPayload['labels'],
+            'chartIncomeValues' => $chartPayload['incomeValues'],
+            'chartOutcomeValues' => $chartPayload['outcomeValues'],
+            'chartDailyLabels' => $chartPayloadDaily['labels'],
+            'chartDailyIncomeValues' => $chartPayloadDaily['incomeValues'],
+            'chartDailyOutcomeValues' => $chartPayloadDaily['outcomeValues'],
+            'chartMonthlyLabels' => $chartPayloadMonthly['labels'],
+            'chartMonthlyIncomeValues' => $chartPayloadMonthly['incomeValues'],
+            'chartMonthlyOutcomeValues' => $chartPayloadMonthly['outcomeValues'],
+            'chartYearlyLabels' => $chartPayloadYearly['labels'],
+            'chartYearlyIncomeValues' => $chartPayloadYearly['incomeValues'],
+            'chartYearlyOutcomeValues' => $chartPayloadYearly['outcomeValues'],
             'pageScript' => 'admin-financial-report.js',
         ];
 
@@ -4652,11 +4924,40 @@ class Ctrl extends Controller
         ];
     }
 
+    private function formatDailyChartLabel(string $dateKey): string
+    {
+        $timestamp = strtotime($dateKey);
+        if ($timestamp === false) {
+            return $dateKey;
+        }
+
+        $month = (int) date('n', $timestamp);
+        $day = (int) date('j', $timestamp);
+        $monthNames = [
+            1 => 'Jan',
+            2 => 'Feb',
+            3 => 'Mar',
+            4 => 'Apr',
+            5 => 'Mei',
+            6 => 'Jun',
+            7 => 'Jul',
+            8 => 'Agu',
+            9 => 'Sep',
+            10 => 'Okt',
+            11 => 'Nov',
+            12 => 'Des',
+        ];
+
+        $monthLabel = $monthNames[$month] ?? date('M', $timestamp);
+        return $day . ' ' . $monthLabel;
+    }
+
     private function buildFinancialReportData(int $selectedYear, int $selectedMonth): array
     {
         $currentYear = (int) date('Y');
         $entries = $this->approvedPaymentIncomeEntries();
         $daily = [];
+        $dailyAll = [];
         $monthly = [];
         $yearly = [];
 
@@ -4679,6 +4980,12 @@ class Ctrl extends Controller
                 $daily[$dateKey]['transactions']++;
                 $daily[$dateKey]['income'] += $amount;
             }
+
+            if (!isset($dailyAll[$dateKey])) {
+                $dailyAll[$dateKey] = ['transactions' => 0, 'income' => 0];
+            }
+            $dailyAll[$dateKey]['transactions']++;
+            $dailyAll[$dateKey]['income'] += $amount;
 
             if ($year === $selectedYear) {
                 if (!isset($monthly[$monthKey])) {
@@ -4709,6 +5016,20 @@ class Ctrl extends Controller
                 'income_label' => $this->formatRupiah((int) ($row['income'] ?? 0)),
             ];
         })->values()->all();
+
+        ksort($dailyAll);
+        $dailyAllRows = collect($dailyAll)->map(function ($row, $dateKey) {
+            $timestamp = strtotime((string) $dateKey);
+            return [
+                'label' => $timestamp !== false ? date('d M Y', $timestamp) : (string) $dateKey,
+                'chart_label' => $this->formatDailyChartLabel((string) $dateKey),
+                'period' => (string) $dateKey,
+                'transactions' => (int) ($row['transactions'] ?? 0),
+                'income' => (int) ($row['income'] ?? 0),
+                'income_label' => $this->formatRupiah((int) ($row['income'] ?? 0)),
+            ];
+        })->values();
+        $dailyChartRows = $dailyAllRows->slice(max(0, $dailyAllRows->count() - 14))->values()->all();
 
         $monthlyRows = collect($monthly)->map(function ($row, $monthKey) {
             $timestamp = strtotime((string) $monthKey . '-01');
@@ -4770,6 +5091,7 @@ class Ctrl extends Controller
         return [
             'yearOptions' => $yearOptions,
             'dailyRows' => $dailyRows,
+            'dailyChartRows' => $dailyChartRows,
             'monthlyRows' => $monthlyRows,
             'yearlyRows' => $yearlyRows,
             'expenseRows' => $expenseRows,
@@ -6789,6 +7111,8 @@ class Ctrl extends Controller
             'systemcontact' => ['nullable', 'string', 'max:255'],
             'system_insta' => ['nullable', 'string', 'max:255'],
             'systemaddress' => ['nullable', 'string', 'max:255'],
+            'operational_open' => ['required', 'regex:/^([01]\d|2[0-3]):[0-5]\d$/'],
+            'operational_close' => ['required', 'regex:/^([01]\d|2[0-3]):[0-5]\d$/'],
             'system_theme_color_soft' => ['nullable', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'system_theme_color_bold' => ['nullable', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'bankname' => ['nullable', 'array'],
@@ -6824,6 +7148,8 @@ class Ctrl extends Controller
             'systemcontact' => $validated['systemcontact'] ?? '',
             'system_insta' => $validated['system_insta'] ?? '',
             'systemaddress' => $validated['systemaddress'] ?? '',
+            'operational_open' => $validated['operational_open'],
+            'operational_close' => $validated['operational_close'],
             'color1' => $this->normalizeHexColor(
                 $validated['system_theme_color_soft'] ?? null,
                 $this->defaultThemeSoftColor()
@@ -6833,6 +7159,12 @@ class Ctrl extends Controller
                 $this->defaultThemeBoldColor()
             ),
         ];
+
+        if ($this->toMinutes($validated['operational_close']) <= $this->toMinutes($validated['operational_open'])) {
+            return back()
+                ->withErrors(['operational_close' => 'Operational end time must be after start time.'])
+                ->withInput();
+        }
 
         if ($systemId) {
             DB::connection('mysql')->table('neoura.system')->where('systemid', $systemId)->update($systemPayload);

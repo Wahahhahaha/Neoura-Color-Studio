@@ -73,6 +73,17 @@
                 <label for="systemaddress">Address</label>
                 <input type="text" id="systemaddress" name="systemaddress" value="{{ old('systemaddress', $website['address'] ?? '') }}">
 
+                <div class="setting-theme-grid">
+                    <div>
+                        <label for="operational_open">Operational Start</label>
+                        <input type="time" id="operational_open" name="operational_open" value="{{ old('operational_open', $website['operational_open'] ?? '10:00') }}" required>
+                    </div>
+                    <div>
+                        <label for="operational_close">Operational End</label>
+                        <input type="time" id="operational_close" name="operational_close" value="{{ old('operational_close', $website['operational_close'] ?? '22:00') }}" required>
+                    </div>
+                </div>
+
                 <div class="setting-bank-block">
                     <div class="setting-bank-head">
                         <p class="setting-label">Bank Accounts</p>

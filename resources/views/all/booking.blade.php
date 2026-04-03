@@ -3,7 +3,7 @@
             <div>
                 <p class="eyebrow">{{ __('ui.booking.selected_package') }}</p>
                 <h1>{{ $bookingPackage['name'] }}</h1>
-                <p class="booking-package-meta">{{ __('ui.booking.duration') }}: {{ $bookingPackage['duration'] }} | {{ __('ui.booking.price') }}: {{ $bookingPackage['price'] }}</p>
+                <p class="booking-package-meta">{{ __('ui.booking.duration') }}: {{ $bookingPackage['duration'] }} | {{ __('ui.booking.price') }}: {{ $bookingPackage['price_display'] ?? $bookingPackage['price'] }}</p>
                 <p>{{ $bookingPackage['description'] }}</p>
 
                 <div class="package-detail-box">

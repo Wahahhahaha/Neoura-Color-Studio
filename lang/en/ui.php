@@ -40,6 +40,7 @@ return [
         'phone' => 'Phone',
         'instagram' => 'Instagram',
         'studio_address' => 'Studio Address',
+        'operational_hours' => 'Operational Hours',
         'open_google_maps' => 'Open on Google Maps',
     ],
     'about' => [

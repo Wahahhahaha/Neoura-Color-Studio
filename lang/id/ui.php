@@ -40,6 +40,7 @@ return [
         'phone' => 'Telepon',
         'instagram' => 'Instagram',
         'studio_address' => 'Alamat Studio',
+        'operational_hours' => 'Jam Operasional',
         'open_google_maps' => 'Buka di Google Maps',
     ],
     'about' => [

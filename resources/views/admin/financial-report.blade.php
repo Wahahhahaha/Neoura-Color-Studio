@@ -19,6 +19,22 @@
     $prevMonth = (int) date('n', $prevTimestamp);
     $nextYear = (int) date('Y', $nextTimestamp);
     $nextMonth = (int) date('n', $nextTimestamp);
+
+    $chartLabelsJson = htmlspecialchars(json_encode(array_values($chartLabels ?? [])), ENT_QUOTES, 'UTF-8');
+    $chartIncomeJson = htmlspecialchars(json_encode(array_values($chartIncomeValues ?? [])), ENT_QUOTES, 'UTF-8');
+    $chartOutcomeJson = htmlspecialchars(json_encode(array_values($chartOutcomeValues ?? [])), ENT_QUOTES, 'UTF-8');
+
+    $chartDailyLabelsJson = htmlspecialchars(json_encode(array_values($chartDailyLabels ?? [])), ENT_QUOTES, 'UTF-8');
+    $chartDailyIncomeJson = htmlspecialchars(json_encode(array_values($chartDailyIncomeValues ?? [])), ENT_QUOTES, 'UTF-8');
+    $chartDailyOutcomeJson = htmlspecialchars(json_encode(array_values($chartDailyOutcomeValues ?? [])), ENT_QUOTES, 'UTF-8');
+
+    $chartMonthlyLabelsJson = htmlspecialchars(json_encode(array_values($chartMonthlyLabels ?? [])), ENT_QUOTES, 'UTF-8');
+    $chartMonthlyIncomeJson = htmlspecialchars(json_encode(array_values($chartMonthlyIncomeValues ?? [])), ENT_QUOTES, 'UTF-8');
+    $chartMonthlyOutcomeJson = htmlspecialchars(json_encode(array_values($chartMonthlyOutcomeValues ?? [])), ENT_QUOTES, 'UTF-8');
+
+    $chartYearlyLabelsJson = htmlspecialchars(json_encode(array_values($chartYearlyLabels ?? [])), ENT_QUOTES, 'UTF-8');
+    $chartYearlyIncomeJson = htmlspecialchars(json_encode(array_values($chartYearlyIncomeValues ?? [])), ENT_QUOTES, 'UTF-8');
+    $chartYearlyOutcomeJson = htmlspecialchars(json_encode(array_values($chartYearlyOutcomeValues ?? [])), ENT_QUOTES, 'UTF-8');
 @endphp
 
 <section class="section financial-page">
@@ -32,7 +48,7 @@
                 </div>
                 <div class="financial-hero-pill">
                     <span>Current View</span>
-                    <strong>{{ ucfirst($activeType) }}</strong>
+                    <strong data-financial-current-view>{{ ucfirst($activeType) }}</strong>
                 </div>
             </div>
 
@@ -47,7 +63,7 @@
             @endif
             <p class="setting-alert" data-financial-feedback hidden></p>
 
-            <form method="get" action="{{ route('admin.financial') }}" class="financial-filter-card">
+            <form method="get" action="{{ route('admin.financial') }}" class="financial-filter-card" data-financial-filter-form>
                 <div class="financial-filter-grid">
                     <div class="admin-user-level-filter">
                         <label for="financial_type">Report Type</label>

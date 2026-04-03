@@ -4,8 +4,11 @@
 
     const refs = {
         form: null,
+        filterForm: null,
         rowsWrap: null,
         ledgerRowsWrap: null,
+        reportArea: null,
+        currentViewNode: null,
         addButton: null,
         totalExpenseNode: null,
         deleteUrlTemplate: '',
@@ -44,6 +47,347 @@
         return `Rp ${new Intl.NumberFormat('id-ID').format(number)}`;
     };
 
+    const formatCompact = (value) => {
+        const number = Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+        return new Intl.NumberFormat('id-ID', {
+            notation: 'compact',
+            maximumFractionDigits: 1,
+        }).format(number);
+    };
+
+    const parseSeries = (value) => {
+        if (!value || typeof value !== 'string') {
+            return [];
+        }
+
+        try {
+            const parsed = JSON.parse(value);
+            if (!Array.isArray(parsed)) {
+                return [];
+            }
+            return parsed;
+        } catch (_error) {
+            return [];
+        }
+    };
+
+    const createLegend = (incomeLabel, outcomeLabel, incomePercent = 0, outcomePercent = 0) => `
+        <div class="financial-chart-legend">
+            <span class="is-income">Income ${escapeHtml(incomeLabel)} (${Math.round(incomePercent)}%)</span>
+            <span class="is-outcome">Outcome ${escapeHtml(outcomeLabel)} (${Math.round(outcomePercent)}%)</span>
+        </div>
+    `;
+
+    const polarPoint = (cx, cy, r, angle) => {
+        const radians = ((angle - 90) * Math.PI) / 180;
+        return {
+            x: cx + (r * Math.cos(radians)),
+            y: cy + (r * Math.sin(radians)),
+        };
+    };
+
+    const pieSlicePath = (cx, cy, r, startAngle, endAngle) => {
+        const start = polarPoint(cx, cy, r, endAngle);
+        const end = polarPoint(cx, cy, r, startAngle);
+        const largeArc = endAngle - startAngle <= 180 ? '0' : '1';
+        return `M ${cx} ${cy} L ${start.x} ${start.y} A ${r} ${r} 0 ${largeArc} 0 ${end.x} ${end.y} Z`;
+    };
+
+    const renderPieChart = (node, incomeValue, outcomeValue, incomeLabel, outcomeLabel) => {
+        if (!node) {
+            return;
+        }
+
+        const income = Number.isFinite(incomeValue) ? Math.max(0, incomeValue) : 0;
+        const outcome = Number.isFinite(outcomeValue) ? Math.max(0, outcomeValue) : 0;
+        const total = income + outcome;
+        const incomePercent = total > 0 ? (income / total) * 100 : 0;
+        const outcomePercent = total > 0 ? (outcome / total) * 100 : 0;
+        const radius = 72;
+        const circumference = 2 * Math.PI * radius;
+        const incomeLength = total > 0 ? (income / total) * circumference : circumference;
+        const outcomeLength = Math.max(0, circumference - incomeLength);
+
+        node.innerHTML = `
+            <svg class="financial-chart-svg" viewBox="0 0 280 250" role="img" aria-label="Income and outcome pie chart">
+                <defs>
+                    <linearGradient id="chartIncomeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#f2ad7b"></stop>
+                        <stop offset="100%" stop-color="#d88f5c"></stop>
+                    </linearGradient>
+                    <linearGradient id="chartOutcomeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#e5d8cf"></stop>
+                        <stop offset="100%" stop-color="#c3b1a5"></stop>
+                    </linearGradient>
+                </defs>
+                <circle cx="140" cy="116" r="${radius}" class="financial-chart-donut-track"></circle>
+                <circle
+                    cx="140"
+                    cy="116"
+                    r="${radius}"
+                    class="financial-chart-donut-slice-income"
+                    stroke-dasharray="${incomeLength} ${Math.max(0, circumference - incomeLength)}"
+                ></circle>
+                <circle
+                    cx="140"
+                    cy="116"
+                    r="${radius}"
+                    class="financial-chart-donut-slice-outcome"
+                    stroke-dasharray="${outcomeLength} ${Math.max(0, circumference - outcomeLength)}"
+                    stroke-dashoffset="${-incomeLength}"
+                ></circle>
+                <circle cx="140" cy="116" r="48" fill="#ffffff"></circle>
+                <text x="140" y="106" text-anchor="middle" class="financial-chart-center-kicker">TOTAL</text>
+                <text x="140" y="128" text-anchor="middle" class="financial-chart-center-value">${escapeHtml(formatCompact(total))}</text>
+                <text x="140" y="146" text-anchor="middle" class="financial-chart-center-text">${Math.round(incomePercent)}% income</text>
+            </svg>
+            ${createLegend(incomeLabel, outcomeLabel, incomePercent, outcomePercent)}
+        `;
+    };
+
+    const buildPolylinePoints = (values, chartWidth, chartHeight, padX, padY, maxValue) => values
+        .map((value, index) => {
+            const safeValue = Number.isFinite(value) ? Math.max(0, value) : 0;
+            const x = values.length === 1
+                ? (padX + ((chartWidth - (padX * 2)) / 2))
+                : (padX + (index * (chartWidth - (padX * 2)) / (values.length - 1)));
+            const y = chartHeight - padY - ((safeValue / maxValue) * (chartHeight - (padY * 2)));
+            return `${x},${y}`;
+        })
+        .join(' ');
+
+    const normalizeChartSeries = (labels, incomeValues, outcomeValues) => {
+        const maxLength = Math.max(1, labels.length, incomeValues.length, outcomeValues.length);
+        const normalizedLabels = Array.from({ length: maxLength }, (_, index) => {
+            const raw = labels[index];
+            if (typeof raw === 'string' && raw.trim() !== '') {
+                return raw;
+            }
+            return `P${index + 1}`;
+        });
+
+        const normalizedIncome = Array.from({ length: maxLength }, (_, index) => {
+            const value = Number(incomeValues[index]);
+            return Number.isFinite(value) && value >= 0 ? value : 0;
+        });
+
+        const normalizedOutcome = Array.from({ length: maxLength }, (_, index) => {
+            const value = Number(outcomeValues[index]);
+            return Number.isFinite(value) && value >= 0 ? value : 0;
+        });
+
+        return {
+            labels: normalizedLabels,
+            income: normalizedIncome,
+            outcome: normalizedOutcome,
+        };
+    };
+
+    const sumSeries = (values) => values.reduce((carry, value) => {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed) || parsed < 0) {
+            return carry;
+        }
+        return carry + parsed;
+    }, 0);
+
+    const shouldShowLabel = (index, total) => {
+        if (total <= 6) {
+            return true;
+        }
+        if (index === 0 || index === total - 1) {
+            return true;
+        }
+        const step = Math.ceil(total / 4);
+        return index % step === 0;
+    };
+
+    const renderLineChart = (node, labels, incomeValues, outcomeValues, incomeLabel, outcomeLabel) => {
+        if (!node) {
+            return;
+        }
+
+        const normalized = normalizeChartSeries(labels, incomeValues, outcomeValues);
+        const chartLabels = normalized.labels;
+        const income = normalized.income;
+        const outcome = normalized.outcome;
+        const maxValue = Math.max(1, ...income, ...outcome);
+        const width = 500;
+        const height = 220;
+        const padX = 34;
+        const padY = 24;
+
+        const incomePoints = buildPolylinePoints(income, width, height, padX, padY, maxValue);
+        const outcomePoints = buildPolylinePoints(outcome, width, height, padX, padY, maxValue);
+
+        const yGrid = [0, 0.25, 0.5, 0.75, 1].map((fraction) => {
+            const y = height - padY - (fraction * (height - (padY * 2)));
+            return `<line x1="${padX}" y1="${y}" x2="${width - padX}" y2="${y}" class="financial-chart-grid-line"></line>`;
+        }).join('');
+
+        const xLabels = chartLabels.map((label, index) => {
+            if (!shouldShowLabel(index, chartLabels.length)) {
+                return '';
+            }
+            const x = chartLabels.length === 1
+                ? (padX + ((width - (padX * 2)) / 2))
+                : (padX + (index * (width - (padX * 2)) / (chartLabels.length - 1)));
+            return `<text x="${x}" y="${height - 4}" text-anchor="middle" class="financial-chart-axis-label">${escapeHtml(label)}</text>`;
+        }).join('');
+
+        const incomeDots = income.map((value, index) => {
+            const x = chartLabels.length === 1
+                ? (padX + ((width - (padX * 2)) / 2))
+                : (padX + (index * (width - (padX * 2)) / (chartLabels.length - 1)));
+            const y = height - padY - ((value / maxValue) * (height - (padY * 2)));
+            return `<circle cx="${x}" cy="${y}" r="3.5" class="financial-chart-dot-income"></circle>`;
+        }).join('');
+
+        const outcomeDots = outcome.map((value, index) => {
+            const x = chartLabels.length === 1
+                ? (padX + ((width - (padX * 2)) / 2))
+                : (padX + (index * (width - (padX * 2)) / (chartLabels.length - 1)));
+            const y = height - padY - ((value / maxValue) * (height - (padY * 2)));
+            return `<circle cx="${x}" cy="${y}" r="3.5" class="financial-chart-dot-outcome"></circle>`;
+        }).join('');
+
+        const singlePointGuide = chartLabels.length === 1
+            ? `<line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" class="financial-chart-single-guide"></line>`
+            : '';
+
+        node.innerHTML = `
+            <svg class="financial-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Income and outcome line chart">
+                ${yGrid}
+                <line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" class="financial-chart-axis-line"></line>
+                <line x1="${padX}" y1="${padY}" x2="${padX}" y2="${height - padY}" class="financial-chart-axis-line"></line>
+                ${singlePointGuide}
+                <polyline points="${outcomePoints}" class="financial-chart-line-outcome"></polyline>
+                <polyline points="${incomePoints}" class="financial-chart-line-income"></polyline>
+                ${outcomeDots}
+                ${incomeDots}
+                ${xLabels}
+            </svg>
+            ${createLegend(incomeLabel, outcomeLabel)}
+        `;
+    };
+
+    const renderBarChart = (node, labels, incomeValues, outcomeValues, incomeLabel, outcomeLabel) => {
+        if (!node) {
+            return;
+        }
+
+        const normalized = normalizeChartSeries(labels, incomeValues, outcomeValues);
+        const chartLabels = normalized.labels;
+        const income = normalized.income;
+        const outcome = normalized.outcome;
+        const maxValue = Math.max(1, ...income, ...outcome);
+        const width = 500;
+        const height = 220;
+        const padX = 20;
+        const padY = 24;
+        const chartWidth = width - (padX * 2);
+        const slotWidth = chartWidth / chartLabels.length;
+        const barWidth = Math.max(8, Math.min(18, (slotWidth - 8) / 2));
+
+        const yGrid = [0, 0.25, 0.5, 0.75, 1].map((fraction) => {
+            const y = height - padY - (fraction * (height - (padY * 2)));
+            return `<line x1="${padX}" y1="${y}" x2="${width - padX}" y2="${y}" class="financial-chart-grid-line"></line>`;
+        }).join('');
+
+        const bars = chartLabels.map((label, index) => {
+            const incomeValue = Number.isFinite(income[index]) ? Math.max(0, income[index]) : 0;
+            const outcomeValue = Number.isFinite(outcome[index]) ? Math.max(0, outcome[index]) : 0;
+            const baseX = padX + (index * slotWidth) + ((slotWidth - ((barWidth * 2) + 4)) / 2);
+            const incomeHeight = (incomeValue / maxValue) * (height - (padY * 2));
+            const outcomeHeight = (outcomeValue / maxValue) * (height - (padY * 2));
+            const incomeY = height - padY - incomeHeight;
+            const outcomeY = height - padY - outcomeHeight;
+            const showText = shouldShowLabel(index, chartLabels.length);
+            const labelText = showText
+                ? `<text x="${padX + (index * slotWidth) + (slotWidth / 2)}" y="${height - 4}" text-anchor="middle" class="financial-chart-axis-label">${escapeHtml(label)}</text>`
+                : '';
+
+            return `
+                <rect x="${baseX}" y="${outcomeY}" width="${barWidth}" height="${outcomeHeight}" class="financial-chart-bar-outcome"></rect>
+                <rect x="${baseX + barWidth + 4}" y="${incomeY}" width="${barWidth}" height="${incomeHeight}" class="financial-chart-bar-income"></rect>
+                ${labelText}
+            `;
+        }).join('');
+
+        node.innerHTML = `
+            <svg class="financial-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Income and outcome bar chart">
+                ${yGrid}
+                <line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" class="financial-chart-axis-line"></line>
+                ${bars}
+            </svg>
+            ${createLegend(incomeLabel, outcomeLabel)}
+        `;
+    };
+
+    const initFinancialCharts = () => {
+        const chartWrap = document.querySelector('[data-financial-charts]');
+        if (!chartWrap) {
+            return;
+        }
+
+        const activePeriodRaw = (chartWrap.getAttribute('data-active-period') || 'daily').toLowerCase();
+        const activePeriod = ['daily', 'monthly', 'yearly'].includes(activePeriodRaw) ? activePeriodRaw : 'daily';
+        const labels = parseSeries(
+            chartWrap.getAttribute(`data-chart-${activePeriod}-labels`)
+            || chartWrap.getAttribute('data-chart-labels')
+            || '[]',
+        ).map((item) => String(item ?? ''));
+        const incomeSeries = parseSeries(
+            chartWrap.getAttribute(`data-chart-${activePeriod}-income-series`)
+            || chartWrap.getAttribute('data-chart-income-series')
+            || '[]',
+        ).map((item) => Number(item) || 0);
+        const outcomeSeries = parseSeries(
+            chartWrap.getAttribute(`data-chart-${activePeriod}-outcome-series`)
+            || chartWrap.getAttribute('data-chart-outcome-series')
+            || '[]',
+        ).map((item) => Number(item) || 0);
+        const incomeValue = sumSeries(incomeSeries);
+        const outcomeValue = sumSeries(outcomeSeries);
+        const incomeLabel = formatRupiah(incomeValue);
+        const outcomeLabel = formatRupiah(outcomeValue);
+        const stageNode = chartWrap.querySelector('[data-chart-stage]');
+        const activeTypeRaw = (chartWrap.getAttribute('data-active-chart') || 'pie').toLowerCase();
+        const activeType = ['pie', 'line', 'bar'].includes(activeTypeRaw) ? activeTypeRaw : 'pie';
+
+        if (stageNode) {
+            if (activeType === 'line') {
+                renderLineChart(stageNode, labels, incomeSeries, outcomeSeries, incomeLabel, outcomeLabel);
+            } else if (activeType === 'bar') {
+                renderBarChart(stageNode, labels, incomeSeries, outcomeSeries, incomeLabel, outcomeLabel);
+            } else {
+                renderPieChart(stageNode, incomeValue, outcomeValue, incomeLabel, outcomeLabel);
+            }
+        }
+
+        const titleNode = chartWrap.querySelector('[data-chart-title]');
+        if (titleNode) {
+            const typeLabel = activeType === 'line' ? 'Line' : (activeType === 'bar' ? 'Bar' : 'Pie');
+            const periodLabel = activePeriod === 'monthly' ? 'Monthly' : (activePeriod === 'yearly' ? 'Yearly' : 'Daily');
+            titleNode.textContent = `Income vs Outcome - ${periodLabel} - ${typeLabel}`;
+        }
+
+        const switchButtons = chartWrap.querySelectorAll('[data-chart-switch]');
+        switchButtons.forEach((button) => {
+            const type = (button.getAttribute('data-chart-switch') || '').toLowerCase();
+            const isActive = type === activeType;
+            button.classList.toggle('is-active', isActive);
+            button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        });
+
+        const periodButtons = chartWrap.querySelectorAll('[data-period-switch]');
+        periodButtons.forEach((button) => {
+            const period = (button.getAttribute('data-period-switch') || '').toLowerCase();
+            const isActive = period === activePeriod;
+            button.classList.toggle('is-active', isActive);
+            button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        });
+    };
     const updateTotalExpense = (value, label) => {
         if (!refs.totalExpenseNode) {
             return;
@@ -170,8 +514,11 @@
 
     const refreshRefs = () => {
         refs.form = document.querySelector('[data-expense-form]');
+        refs.filterForm = document.querySelector('[data-financial-filter-form]');
         refs.rowsWrap = document.querySelector('[data-expense-input-rows]');
         refs.ledgerRowsWrap = document.querySelector('[data-expense-ledger-rows]');
+        refs.reportArea = document.querySelector('[data-financial-print-area]');
+        refs.currentViewNode = document.querySelector('[data-financial-current-view]');
         refs.addButton = document.querySelector('[data-add-expense-row]');
         refs.totalExpenseNode = document.querySelector('[data-total-expense]');
         refs.deleteUrlTemplate = refs.form?.getAttribute('data-delete-url-template') || '';
@@ -191,11 +538,102 @@
         refreshRefs();
     };
 
+    const replaceReportArea = (nextHtml) => {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(nextHtml, 'text/html');
+        const nextArea = doc.querySelector('[data-financial-print-area]');
+        const currentArea = document.querySelector('[data-financial-print-area]');
+        if (!nextArea || !currentArea) {
+            throw new Error('Failed to load financial report area.');
+        }
+
+        currentArea.replaceWith(nextArea);
+    };
+
+    const replaceCurrentView = (nextHtml) => {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(nextHtml, 'text/html');
+        const nextNode = doc.querySelector('[data-financial-current-view]');
+        const currentNode = document.querySelector('[data-financial-current-view]');
+        if (!nextNode || !currentNode) {
+            return;
+        }
+
+        currentNode.textContent = nextNode.textContent || '';
+    };
+
+    const replaceFilterForm = (nextHtml) => {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(nextHtml, 'text/html');
+        const nextForm = doc.querySelector('[data-financial-filter-form]');
+        const currentForm = document.querySelector('[data-financial-filter-form]');
+        if (!nextForm || !currentForm) {
+            throw new Error('Failed to load financial filter.');
+        }
+
+        currentForm.replaceWith(nextForm);
+    };
+
+    const fetchAndReplaceFinancialSections = async (url) => {
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'text/html',
+            },
+            credentials: 'same-origin',
+        });
+
+        const html = await response.text();
+        if (!response.ok) {
+            throw new Error('Failed to load financial report.');
+        }
+
+        replaceReportArea(html);
+        replaceExpenseSection(html);
+        replaceCurrentView(html);
+        replaceFilterForm(html);
+        refreshRefs();
+        initFinancialCharts();
+
+        const nextUrl = new URL(url, window.location.origin);
+        window.history.replaceState({}, '', nextUrl.toString());
+    };
+
     refreshRefs();
+    initFinancialCharts();
 
     if (!refs.form || !refs.rowsWrap || !refs.addButton) {
         return;
     }
+
+    document.addEventListener('submit', async (event) => {
+        const filterForm = event.target instanceof HTMLFormElement ? event.target : null;
+        if (!filterForm || !filterForm.matches('[data-financial-filter-form]')) {
+            return;
+        }
+
+        event.preventDefault();
+        clearFeedback();
+
+        const submitBtn = filterForm.querySelector('button[type="submit"]');
+        if (submitBtn) {
+            submitBtn.disabled = true;
+        }
+
+        try {
+            const url = new URL(filterForm.action, window.location.origin);
+            const params = new URLSearchParams(new FormData(filterForm));
+            url.search = params.toString();
+            await fetchAndReplaceFinancialSections(url.toString());
+        } catch (error) {
+            setFeedback(error?.message || 'Failed to load financial report.', 'error');
+        } finally {
+            if (submitBtn) {
+                submitBtn.disabled = false;
+            }
+        }
+    });
 
     document.addEventListener('click', async (event) => {
         const monthNavButton = event.target instanceof Element ? event.target.closest('[data-expense-nav]') : null;
@@ -236,6 +674,32 @@
     });
 
     document.addEventListener('click', (event) => {
+        const periodButton = event.target instanceof Element ? event.target.closest('[data-period-switch]') : null;
+        if (periodButton) {
+            const chartWrap = periodButton.closest('[data-financial-charts]');
+            if (!chartWrap) {
+                return;
+            }
+
+            const targetPeriod = (periodButton.getAttribute('data-period-switch') || 'daily').toLowerCase();
+            chartWrap.setAttribute('data-active-period', targetPeriod);
+            initFinancialCharts();
+            return;
+        }
+
+        const switchButton = event.target instanceof Element ? event.target.closest('[data-chart-switch]') : null;
+        if (switchButton) {
+            const chartWrap = switchButton.closest('[data-financial-charts]');
+            if (!chartWrap) {
+                return;
+            }
+
+            const targetType = (switchButton.getAttribute('data-chart-switch') || 'pie').toLowerCase();
+            chartWrap.setAttribute('data-active-chart', targetType);
+            initFinancialCharts();
+            return;
+        }
+
         const addRowButton = event.target instanceof Element ? event.target.closest('[data-add-expense-row]') : null;
         if (addRowButton) {
             if (!refs.rowsWrap) {

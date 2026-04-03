@@ -1,16 +1,21 @@
 <section class="section">
     <div class="container">
+        @php
+            $serviceTotal = (int) ($servicePagination['total'] ?? 0);
+        @endphp
         <div class="setting-wrap service-page-shell">
             <div class="section-head admin-service-hero">
-                <div>
+                <div class="admin-service-hero-copy">
                     <p class="eyebrow">{{ __('ui.admin.service.eyebrow') }}</p>
                     <h1>{{ __('ui.admin.service.title') }}</h1>
                     <p>{{ __('ui.admin.service.description') }}</p>
                 </div>
                 <div class="admin-service-hero-actions">
+                    <span class="admin-service-stat-pill">
+                        {{ $serviceTotal }} {{ $serviceTotal === 1 ? 'Service' : 'Services' }}
+                    </span>
                     <a href="{{ route('admin.service.export_excel') }}" class="btn btn-outline">{{ __('ui.common.export_excel') }}</a>
                     <button type="button" class="btn btn-outline" data-open-import-service-modal>{{ __('ui.common.import_excel') }}</button>
-
                     <button type="button" class="btn" data-open-add-service-modal>{{ __('ui.admin.service.add_service') }}</button>
                 </div>
             </div>
@@ -24,7 +29,7 @@
             @endif
 
             <div
-                class="service-content-shell"
+                class="service-content-shell admin-service-list-surface"
                 data-service-list-root
                 data-fetch-url="{{ route('admin.service') }}"
                 data-load-failed="{{ __('ui.admin.service.load_failed') }}"
