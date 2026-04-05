@@ -11,8 +11,8 @@
     <link rel="stylesheet" href="{{ asset('css/style.css') }}">
     <style>
         :root {
-            --accent-soft: {{ $website['theme_color_soft'] ?? '#F2D5C4' }};
-            --accent-bold: {{ $website['theme_color_bold'] ?? '#C69278' }};
+            --accent-soft: {{ $website['theme_color_soft'] ?? '#F7E7CE' }};
+            --accent-bold: {{ $website['theme_color_bold'] ?? '#C6A67A' }};
             --accent: var(--accent-soft);
             --accent-strong: var(--accent-bold);
         }

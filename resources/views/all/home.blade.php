@@ -1,7 +1,7 @@
     <section class="hero" id="home">
         <div class="hero-carousel" data-carousel data-carousel-autoplay-ms="{{ $carouselAutoplayMs ?? 5000 }}">
-            @if (!empty($showAdminMenu))
-                <button type="button" class="carousel-edit-btn" data-open-carousel-editor aria-label="Edit carousel">
+            @if (!empty($canEditHomeContent))
+                <button type="button" class="carousel-edit-btn" data-open-carousel-editor aria-label="{{ __('ui.home.edit_carousel_aria') }}">
                     <svg viewBox="0 0 24 24" class="admin-icon" aria-hidden="true"><path d="M4 20h4l10-10-4-4L4 16v4zm12-12 2 2"/></svg>
                 </button>
             @endif
@@ -24,36 +24,46 @@
                 @endforeach
             </div>
 
-            <button type="button" class="carousel-btn prev" aria-label="Previous slide" data-carousel-prev>&#10094;</button>
-            <button type="button" class="carousel-btn next" aria-label="Next slide" data-carousel-next>&#10095;</button>
+            <button type="button" class="carousel-btn prev" aria-label="{{ __('ui.home.carousel_prev_slide_aria') }}" data-carousel-prev>&#10094;</button>
+            <button type="button" class="carousel-btn next" aria-label="{{ __('ui.home.carousel_next_slide_aria') }}" data-carousel-next>&#10095;</button>
 
             <div class="carousel-dots" data-carousel-dots>
                 @foreach (($carouselSlides ?? []) as $index => $slide)
-                    <button type="button" class="dot {{ $index === 0 ? 'is-active' : '' }}" data-slide="{{ $index }}" aria-label="Slide {{ $index + 1 }}"></button>
+                    <button type="button" class="dot {{ $index === 0 ? 'is-active' : '' }}" data-slide="{{ $index }}" aria-label="{{ __('ui.home.slide_label', ['number' => $index + 1]) }}"></button>
                 @endforeach
             </div>
         </div>
     </section>
 
-    @if (!empty($showAdminMenu))
+    @if (!empty($canEditHomeContent))
         <div class="crop-modal carousel-editor-modal" data-carousel-editor-modal hidden>
             <div class="crop-modal-backdrop" data-close-carousel-editor></div>
-            <div class="crop-modal-dialog carousel-editor-dialog" role="dialog" aria-modal="true" aria-label="Edit carousel">
+            <div
+                class="crop-modal-dialog carousel-editor-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-label="{{ __('ui.home.edit_carousel_aria') }}"
+                data-i18n-slide-label="{{ __('ui.home.slide_label', ['number' => ':number']) }}"
+                data-i18n-carousel-save-failed="{{ __('ui.home.carousel_save_failed') }}"
+                data-i18n-saved="{{ __('ui.home.saved') }}"
+                data-i18n-carousel-network-error="{{ __('ui.home.carousel_network_error') }}"
+                data-i18n-slide-preview-alt="{{ __('ui.home.slide_preview_alt') }}"
+            >
                 <div class="crop-modal-head">
-                    <h2>Edit Home Content</h2>
-                    <button type="button" class="crop-close" data-close-carousel-editor aria-label="Close carousel editor">x</button>
+                    <h2>{{ __('ui.home.edit_home_content') }}</h2>
+                    <button type="button" class="crop-close" data-close-carousel-editor aria-label="{{ __('ui.home.close_carousel_editor_aria') }}">x</button>
                 </div>
 
-                <form method="post" action="{{ route('carousel.update') }}" enctype="multipart/form-data" class="carousel-editor-form">
+                <form method="post" action="{{ route('carousel.update') }}" enctype="multipart/form-data" class="carousel-editor-form service-modal-form">
                     @csrf
                     <p class="carousel-editor-feedback" data-carousel-editor-feedback hidden></p>
 
                     <div class="carousel-editor-card">
                         <div class="carousel-editor-card-head">
-                            <h3>Carousel Settings</h3>
+                            <h3>{{ __('ui.home.carousel_settings') }}</h3>
                         </div>
 
-                        <label for="carousel_autoplay_ms">Slide Interval (ms)</label>
+                        <label for="carousel_autoplay_ms">{{ __('ui.home.slide_interval_label') }}</label>
                         <input
                             type="number"
                             id="carousel_autoplay_ms"
@@ -67,31 +77,31 @@
                     </div>
 
                     <div class="carousel-editor-tools">
-                        <h3>Slides</h3>
-                        <button type="button" class="btn btn-outline" data-add-slide>Add Slide</button>
+                        <h3>{{ __('ui.home.slides') }}</h3>
+                        <button type="button" class="btn btn-outline" data-add-slide>{{ __('ui.home.add_slide') }}</button>
                     </div>
 
                     <div class="carousel-editor-list" data-slide-list>
                         @foreach (($carouselSlides ?? []) as $index => $slide)
                             <div class="carousel-editor-card" data-slide-card>
                                 <div class="carousel-editor-card-head">
-                                    <h3 data-slide-heading>Slide {{ $index + 1 }}</h3>
-                                    <button type="button" class="carousel-editor-remove" data-remove-slide>Remove</button>
+                                    <h3 data-slide-heading>{{ __('ui.home.slide_label', ['number' => $index + 1]) }}</h3>
+                                    <button type="button" class="carousel-editor-remove" data-remove-slide>{{ __('ui.home.remove_slide') }}</button>
                                 </div>
 
                                 @if (!empty($slide['image_url']))
-                                    <img src="{{ $slide['image_url'] }}" alt="Current slide {{ $index + 1 }}" class="carousel-editor-preview">
+                                    <img src="{{ $slide['image_url'] }}" alt="{{ __('ui.home.slide_preview_alt') }}" class="carousel-editor-preview">
                                 @endif
 
                                 <input type="hidden" data-field="existing_image" name="slides[{{ $index }}][existing_image]" value="{{ $slide['image_path'] ?? '' }}">
 
-                                <label>Slide Image</label>
+                                <label>{{ __('ui.home.slide_image') }}</label>
                                 <input type="file" data-field="image" name="slides[{{ $index }}][image]" accept="image/*">
 
-                                <label>Slide Title</label>
+                                <label>{{ __('ui.home.slide_title') }}</label>
                                 <input type="text" data-field="title" name="slides[{{ $index }}][title]" value="{{ $slide['title'] ?? '' }}" required>
 
-                                <label>Slide Description</label>
+                                <label>{{ __('ui.home.slide_description') }}</label>
                                 <textarea data-field="description" name="slides[{{ $index }}][description]" rows="3" required>{{ $slide['description'] ?? '' }}</textarea>
                             </div>
                         @endforeach
@@ -100,26 +110,26 @@
                     <template data-slide-template>
                         <div class="carousel-editor-card" data-slide-card>
                             <div class="carousel-editor-card-head">
-                                <h3 data-slide-heading>Slide</h3>
-                                <button type="button" class="carousel-editor-remove" data-remove-slide>Remove</button>
+                                <h3 data-slide-heading>{{ __('ui.home.slide_label', ['number' => 1]) }}</h3>
+                                <button type="button" class="carousel-editor-remove" data-remove-slide>{{ __('ui.home.remove_slide') }}</button>
                             </div>
 
                             <input type="hidden" data-field="existing_image" value="">
 
-                            <label>Slide Image</label>
+                            <label>{{ __('ui.home.slide_image') }}</label>
                             <input type="file" data-field="image" accept="image/*">
 
-                            <label>Slide Title</label>
+                            <label>{{ __('ui.home.slide_title') }}</label>
                             <input type="text" data-field="title" value="" required>
 
-                            <label>Slide Description</label>
+                            <label>{{ __('ui.home.slide_description') }}</label>
                             <textarea data-field="description" rows="3" required></textarea>
                         </div>
                     </template>
 
-                    <div class="crop-actions">
-                        <button type="button" class="btn btn-outline" data-close-carousel-editor>Cancel</button>
-                        <button type="submit" class="btn" data-carousel-editor-save>Save Home Content</button>
+                    <div class="crop-actions service-modal-actions">
+                        <button type="button" class="btn btn-outline" data-close-carousel-editor>{{ __('ui.home.cancel') }}</button>
+                        <button type="submit" class="btn" data-carousel-editor-save>{{ __('ui.home.save_home_content') }}</button>
                     </div>
                 </form>
             </div>
@@ -127,15 +137,15 @@
 
         <div class="crop-modal" data-carousel-crop-modal hidden>
             <div class="crop-modal-backdrop" data-close-carousel-crop></div>
-            <div class="crop-modal-dialog" role="dialog" aria-modal="true" aria-label="Crop slide image">
+            <div class="crop-modal-dialog" role="dialog" aria-modal="true" aria-label="{{ __('ui.home.crop_slide_image_aria') }}">
                 <div class="crop-modal-head">
-                    <h2>Crop Image</h2>
-                    <button type="button" class="crop-close" data-close-carousel-crop aria-label="Close crop modal">x</button>
+                    <h2>{{ __('ui.home.crop_image') }}</h2>
+                    <button type="button" class="crop-close" data-close-carousel-crop aria-label="{{ __('ui.home.close_crop_modal_aria') }}">x</button>
                 </div>
 
                 <div class="crop-stage-wrap">
                     <div class="crop-stage" data-carousel-crop-stage>
-                        <img src="" alt="Slide preview" data-carousel-crop-image>
+                        <img src="" alt="{{ __('ui.home.slide_preview_alt') }}" data-carousel-crop-image>
                         <div class="crop-box" data-carousel-crop-box>
                             <span class="crop-handle crop-handle-nw" data-carousel-crop-handle="nw" aria-hidden="true"></span>
                             <span class="crop-handle crop-handle-ne" data-carousel-crop-handle="ne" aria-hidden="true"></span>
@@ -146,13 +156,13 @@
                 </div>
 
                 <div class="crop-controls">
-                    <label for="carouselCropZoom">Zoom</label>
+                    <label for="carouselCropZoom">{{ __('ui.home.zoom') }}</label>
                     <input type="range" id="carouselCropZoom" min="1" max="3" step="0.01" value="1" data-carousel-crop-zoom>
                 </div>
 
                 <div class="crop-actions">
-                    <button type="button" class="btn btn-outline" data-close-carousel-crop>Cancel</button>
-                    <button type="button" class="btn" data-apply-carousel-crop>Apply Crop</button>
+                    <button type="button" class="btn btn-outline" data-close-carousel-crop>{{ __('ui.home.cancel') }}</button>
+                    <button type="button" class="btn" data-apply-carousel-crop>{{ __('ui.home.apply_crop') }}</button>
                 </div>
             </div>
         </div>
@@ -163,7 +173,7 @@
             <div>
                 <div class="about-head-actions">
                     <p class="eyebrow">{{ __('ui.about.heading') }}</p>
-                    @if (!empty($showAdminMenu))
+                    @if (!empty($canEditHomeContent))
                         <button type="button" class="about-edit-btn" data-open-about-editor aria-label="{{ __('ui.about.edit_aria') }}">
                             <svg viewBox="0 0 24 24" class="admin-icon" aria-hidden="true"><path d="M4 20h4l10-10-4-4L4 16v4zm12-12 2 2"/></svg>
                         </button>
@@ -175,7 +185,7 @@
         </div>
     </section>
 
-    @if (!empty($showAdminMenu))
+    @if (!empty($canEditHomeContent))
         <div class="crop-modal about-editor-modal" data-about-editor-modal hidden>
             <div class="crop-modal-backdrop" data-close-about-editor></div>
             <div class="crop-modal-dialog about-editor-dialog" role="dialog" aria-modal="true" aria-label="{{ __('ui.about.edit_aria') }}">
@@ -184,7 +194,15 @@
                     <button type="button" class="crop-close" data-close-about-editor aria-label="{{ __('ui.about.close_edit_aria') }}">x</button>
                 </div>
 
-                <form method="post" action="{{ route('about.update') }}" class="service-modal-form" data-about-editor-form>
+                <form
+                    method="post"
+                    action="{{ route('about.update') }}"
+                    class="service-modal-form"
+                    data-about-editor-form
+                    data-i18n-about-save-failed="{{ __('ui.home.about_save_failed') }}"
+                    data-i18n-about-updated="{{ __('ui.home.about_updated') }}"
+                    data-i18n-about-network-error="{{ __('ui.home.about_network_error') }}"
+                >
                     @csrf
                     <p class="carousel-editor-feedback" data-about-editor-feedback hidden></p>
 
@@ -194,7 +212,7 @@
                     <label for="about_editor_description">{{ __('ui.about.about_description_label') }}</label>
                     <textarea id="about_editor_description" name="about_description" rows="4" required>{{ old('about_description', $aboutContent['description'] ?? '') }}</textarea>
 
-                    <div class="crop-actions">
+                    <div class="crop-actions service-modal-actions">
                         <button type="button" class="btn btn-outline" data-close-about-editor>{{ __('ui.home.cancel') }}</button>
                         <button type="submit" class="btn" data-about-editor-save>{{ __('ui.about.save') }}</button>
                     </div>
@@ -251,7 +269,7 @@
                             name="booking_code"
                             class="booking-status-input"
                             value="{{ old('booking_code') }}"
-                            placeholder="e.g. NRA-ABC123"
+                            placeholder="{{ __('ui.home.booking_code_example') }}"
                             required
                         >
                     </div>
@@ -271,6 +289,20 @@
                     @php
                         $statusValue = strtolower((string) ($bookingLookupResult['status'] ?? ''));
                         $statusClass = str_contains($statusValue, 'confirm') || str_contains($statusValue, 'complete') ? 'is-success' : (str_contains($statusValue, 'cancel') ? 'is-danger' : 'is-pending');
+                        $statusLabel = $bookingLookupResult['status'] ?? '-';
+                        if (str_contains($statusValue, 'pending')) {
+                            $statusLabel = __('ui.home.status_pending');
+                        } elseif (str_contains($statusValue, 'approve')) {
+                            $statusLabel = __('ui.home.status_approved');
+                        } elseif (str_contains($statusValue, 'reject')) {
+                            $statusLabel = __('ui.home.status_rejected');
+                        } elseif (str_contains($statusValue, 'confirm')) {
+                            $statusLabel = __('ui.home.status_confirmed');
+                        } elseif (str_contains($statusValue, 'complete')) {
+                            $statusLabel = __('ui.home.status_completed');
+                        } elseif (str_contains($statusValue, 'cancel')) {
+                            $statusLabel = __('ui.home.status_cancelled');
+                        }
                     @endphp
                     <div class="booking-status-result">
                         <p><span>{{ __('ui.nav.service') }}</span><strong>{{ $bookingLookupResult['service_name'] ?? '-' }}</strong></p>
@@ -278,7 +310,7 @@
                         <p><span>{{ __('ui.home.time_start') }}</span><strong>{{ $bookingLookupResult['start_time'] ?? '-' }}</strong></p>
                         <p><span>{{ __('ui.home.time_end') }}</span><strong>{{ $bookingLookupResult['end_time'] ?? '-' }}</strong></p>
                         <p><span>{{ __('ui.home.name') }}</span><strong>{{ $bookingLookupResult['name'] ?? '-' }}</strong></p>
-                        <p><span>{{ __('ui.home.status') }}</span><strong class="booking-status-pill {{ $statusClass }}">{{ $bookingLookupResult['status'] ?? '-' }}</strong></p>
+                        <p><span>{{ __('ui.home.status') }}</span><strong class="booking-status-pill {{ $statusClass }}">{{ $statusLabel }}</strong></p>
                         <p><span>{{ __('ui.home.booking_code') }}</span><strong>{{ $bookingLookupResult['booking_code'] ?? '-' }}</strong></p>
                     </div>
                 @endif
@@ -288,10 +320,10 @@
 
     <div class="crop-modal booking-verify-modal" data-booking-verify-modal hidden>
         <div class="crop-modal-backdrop" data-close-booking-verify></div>
-        <div class="crop-modal-dialog booking-verify-dialog" role="dialog" aria-modal="true" aria-label="Verify phone">
+        <div class="crop-modal-dialog booking-verify-dialog" role="dialog" aria-modal="true" aria-label="{{ __('ui.home.verify_phone_aria') }}">
             <div class="crop-modal-head">
                 <h2>{{ __('ui.home.phone_verification') }}</h2>
-                <button type="button" class="crop-close" data-close-booking-verify aria-label="Close phone verification">x</button>
+                <button type="button" class="crop-close" data-close-booking-verify aria-label="{{ __('ui.home.close_phone_verification_aria') }}">x</button>
             </div>
 
             <p class="service-meta">{{ __('ui.home.phone_last_4_hint') }}</p>
@@ -302,7 +334,7 @@
                 class="booking-verify-input"
                 inputmode="numeric"
                 maxlength="4"
-                placeholder="e.g. 6789"
+                placeholder="{{ __('ui.home.phone_last4_example') }}"
             >
             <p class="form-message error" data-booking-verify-error hidden>{{ __('ui.home.input_4_digits_error') }}</p>
 
@@ -320,7 +352,7 @@
             <div>
                 <div class="contact-head-actions">
                     <p class="eyebrow">{{ __('ui.nav.contact') }}</p>
-                    @if (!empty($showAdminMenu))
+                    @if (!empty($canEditHomeContent))
                         <button type="button" class="about-edit-btn" data-open-contact-editor aria-label="{{ __('ui.contact.edit_aria') }}">
                             <svg viewBox="0 0 24 24" class="admin-icon" aria-hidden="true"><path d="M4 20h4l10-10-4-4L4 16v4zm12-12 2 2"/></svg>
                         </button>
@@ -362,7 +394,7 @@
         </div>
     </section>
 
-    @if (!empty($showAdminMenu))
+    @if (!empty($canEditHomeContent))
         <div class="crop-modal contact-editor-modal" data-contact-editor-modal hidden>
             <div class="crop-modal-backdrop" data-close-contact-editor></div>
             <div class="crop-modal-dialog contact-editor-dialog" role="dialog" aria-modal="true" aria-label="{{ __('ui.contact.edit_aria') }}">
@@ -371,7 +403,15 @@
                     <button type="button" class="crop-close" data-close-contact-editor aria-label="{{ __('ui.contact.close_edit_aria') }}">x</button>
                 </div>
 
-                <form method="post" action="{{ route('contact.update') }}" class="service-modal-form" data-contact-editor-form>
+                <form
+                    method="post"
+                    action="{{ route('contact.update') }}"
+                    class="service-modal-form"
+                    data-contact-editor-form
+                    data-i18n-contact-save-failed="{{ __('ui.home.contact_save_failed') }}"
+                    data-i18n-contact-updated="{{ __('ui.home.contact_updated') }}"
+                    data-i18n-contact-network-error="{{ __('ui.home.contact_network_error') }}"
+                >
                     @csrf
                     <p class="carousel-editor-feedback" data-contact-editor-feedback hidden></p>
 
@@ -381,7 +421,7 @@
                     <label for="contact_editor_description">{{ __('ui.contact.description_label') }}</label>
                     <textarea id="contact_editor_description" name="contact_description" rows="4" required>{{ old('contact_description', $contactSectionContent['description'] ?? __('ui.home.contact_description')) }}</textarea>
 
-                    <div class="crop-actions">
+                    <div class="crop-actions service-modal-actions">
                         <button type="button" class="btn btn-outline" data-close-contact-editor>{{ __('ui.home.cancel') }}</button>
                         <button type="submit" class="btn" data-contact-editor-save>{{ __('ui.contact.save') }}</button>
                     </div>

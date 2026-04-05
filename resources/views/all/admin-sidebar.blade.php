@@ -1,4 +1,4 @@
-<aside class="admin-sidebar" aria-label="Admin Navigation" data-admin-sidebar>
+<aside class="admin-sidebar" aria-label="{{ __('ui.sidebar.admin_navigation') }}" data-admin-sidebar>
     @php
         $permissionMap = is_array($sidebarPermissionMap ?? null) ? $sidebarPermissionMap : [];
         $canSeeMenu = function (string $menuKey) use ($permissionMap): bool {
@@ -8,8 +8,8 @@
         $menuItems = [
             [
                 'key' => 'home',
-                'label' => 'Dashboard',
-                'title' => 'Dashboard',
+                'label' => __('ui.sidebar.dashboard'),
+                'title' => __('ui.sidebar.dashboard'),
                 'route_name' => 'home',
                 'href' => route('home'),
                 'icon' => 'M3 10.5 12 3l9 7.5M6 9.5V20h12V9.5',
@@ -18,8 +18,8 @@
             ],
             [
                 'key' => 'service',
-                'label' => 'Service',
-                'title' => 'Service',
+                'label' => __('ui.sidebar.service'),
+                'title' => __('ui.sidebar.service'),
                 'route_name' => 'admin.service',
                 'href' => route('admin.service'),
                 'icon' => 'M4 6h16M4 12h16M4 18h10',
@@ -28,8 +28,8 @@
             ],
             [
                 'key' => 'payment',
-                'label' => 'Payment Validation',
-                'title' => 'Payment Validation',
+                'label' => __('ui.sidebar.payment_validation'),
+                'title' => __('ui.sidebar.payment_validation'),
                 'route_name' => 'admin.payment',
                 'href' => route('admin.payment'),
                 'icon' => 'M3 7h18v10H3zM3 11h18',
@@ -38,8 +38,8 @@
             ],
             [
                 'key' => 'user',
-                'label' => 'User Data',
-                'title' => 'User Data',
+                'label' => __('ui.sidebar.user_data'),
+                'title' => __('ui.sidebar.user_data'),
                 'route_name' => 'admin.userdata',
                 'href' => route('admin.userdata'),
                 'icon' => 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-7 8a7 7 0 0 1 14 0',
@@ -48,8 +48,8 @@
             ],
             [
                 'key' => 'activity',
-                'label' => 'Activity Log',
-                'title' => 'Activity Log',
+                'label' => __('ui.sidebar.activity_log'),
+                'title' => __('ui.sidebar.activity_log'),
                 'route_name' => 'admin.activitylog',
                 'href' => route('admin.activitylog'),
                 'icon' => 'M4 18h16M7 15V9m5 6V6m5 9v-4',
@@ -58,8 +58,8 @@
             ],
             [
                 'key' => 'financial',
-                'label' => 'Financial Report',
-                'title' => 'Financial Report',
+                'label' => __('ui.sidebar.financial_report'),
+                'title' => __('ui.sidebar.financial_report'),
                 'route_name' => 'admin.financial',
                 'href' => route('admin.financial'),
                 'icon' => 'M4 18h16M7 14v4m5-8v8m5-5v5M5 6h14',
@@ -68,8 +68,8 @@
             ],
             [
                 'key' => 'backup',
-                'label' => 'Backup Database',
-                'title' => 'Backup Database',
+                'label' => __('ui.sidebar.backup_database'),
+                'title' => __('ui.sidebar.backup_database'),
                 'route_name' => 'superadmin.backup',
                 'href' => route('superadmin.backup'),
                 'icon' => 'M12 3v8m0 0 3-3m-3 3-3-3M4 14h16v5H4z',
@@ -78,8 +78,8 @@
             ],
             [
                 'key' => 'recycle',
-                'label' => 'Recyclebin',
-                'title' => 'Recyclebin',
+                'label' => __('ui.sidebar.recycle_bin'),
+                'title' => __('ui.sidebar.recycle_bin'),
                 'route_name' => 'superadmin.recyclebin',
                 'href' => route('superadmin.recyclebin'),
                 'icon' => 'M6 7h12m-9 0V5h6v2m-7 0 1 12h8l1-12',
@@ -88,8 +88,8 @@
             ],
             [
                 'key' => 'permission',
-                'label' => 'Permission',
-                'title' => 'Permission',
+                'label' => __('ui.sidebar.permission'),
+                'title' => __('ui.sidebar.permission'),
                 'route_name' => 'superadmin.permission',
                 'href' => route('superadmin.permission'),
                 'icon' => 'M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3zm-3.5 9.5 2.2 2.2 4.8-4.8',
@@ -98,8 +98,8 @@
             ],
             [
                 'key' => 'setting',
-                'label' => 'Setting',
-                'title' => 'Setting',
+                'label' => __('ui.sidebar.setting'),
+                'title' => __('ui.sidebar.setting'),
                 'route_name' => 'superadmin.setting',
                 'href' => route('superadmin.setting'),
                 'icon' => 'M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zm8 3.5-2 .6a6.9 6.9 0 0 1-.6 1.5l1.2 1.8-1.8 1.8-1.8-1.2c-.5.3-1 .5-1.5.6l-.6 2h-2.6l-.6-2c-.5-.1-1-.3-1.5-.6l-1.8 1.2-1.8-1.8 1.2-1.8c-.3-.5-.5-1-.6-1.5l-2-.6v-2.6l2-.6c.1-.5.3-1 .6-1.5L3 6.7 4.8 5l1.8 1.2c.5-.3 1-.5 1.5-.6l.6-2h2.6l.6 2c.5.1 1 .3 1.5.6L15.2 5 17 6.7l-1.2 1.8c.3.5.5 1 .6 1.5l2 .6v2.4z',
@@ -130,22 +130,20 @@
             $adminDisplayName = trim((string) ($adminAuth['employer_name'] ?? ''));
         }
         if ($adminDisplayName === '') {
-            $adminDisplayName = 'Admin';
+            $adminDisplayName = __('ui.account.admin_fallback');
         }
 
-        $adminRoleName = trim((string) ($adminAuth['levelname'] ?? ''));
+        $adminSidebarDescription = __('ui.sidebar.description');
     @endphp
     <div class="admin-sidebar-head">
         <div class="admin-sidebar-title">
-            <h3>Welcome, <span data-sidebar-admin-name>{{ $adminDisplayName }}</span></h3>
-            @if ($adminRoleName !== '')
-                <p class="admin-role">{{ ucwords($adminRoleName) }}</p>
-            @endif
+            <h3>{{ __('ui.sidebar.welcome') }}, <span data-sidebar-admin-name>{{ $adminDisplayName }}</span></h3>
+            <p class="admin-sidebar-description">{{ $adminSidebarDescription }}</p>
         </div>
     </div>
 
     <div class="admin-sidebar-dual">
-        <nav class="admin-tier-one" aria-label="Sidebar icons">
+        <nav class="admin-tier-one" aria-label="{{ __('ui.sidebar.sidebar_icons') }}">
             @foreach ($visibleMenuItems as $menuItem)
                 @php
                     $routeName = $menuItem['route_name'] ?? null;
@@ -157,7 +155,7 @@
             @endforeach
         </nav>
 
-        <nav class="admin-tier-two" aria-label="Sidebar menu">
+        <nav class="admin-tier-two" aria-label="{{ __('ui.sidebar.sidebar_menu') }}">
             @foreach ($visibleMenuItems as $menuItem)
                 @php
                     $routeName = $menuItem['route_name'] ?? null;
@@ -169,20 +167,20 @@
     </div>
 
     <div class="admin-sidebar-footer">
-        <a href="{{ route('account') }}" class="admin-bottom-link {{ request()->routeIs('account') ? 'is-active' : '' }}" data-menu-key="account" title="Account">
+        <a href="{{ route('account') }}" class="admin-bottom-link {{ request()->routeIs('account') ? 'is-active' : '' }}" data-menu-key="account" title="{{ __('ui.sidebar.account') }}">
             <span class="admin-bottom-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" class="admin-icon"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-7 8a7 7 0 0 1 14 0"/></svg>
             </span>
-            <span>Account</span>
+            <span>{{ __('ui.sidebar.account') }}</span>
         </a>
 
         <form method="post" action="{{ route('logout') }}" class="admin-logout-form">
             @csrf
-            <button type="submit" class="admin-bottom-link admin-logout-btn" title="Logout">
+            <button type="submit" class="admin-bottom-link admin-logout-btn" title="{{ __('ui.sidebar.logout') }}">
                 <span class="admin-bottom-icon admin-logout-icon" aria-hidden="true">
                     <svg viewBox="0 0 24 24" class="admin-icon"><path d="M15 17l5-5-5-5M20 12H9M12 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h6"/></svg>
                 </span>
-                <span>Logout</span>
+                <span>{{ __('ui.sidebar.logout') }}</span>
             </button>
         </form>
     </div>

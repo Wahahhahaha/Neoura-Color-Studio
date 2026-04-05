@@ -1,8 +1,7 @@
-<section class="section">
+<section class="section backup-page">
     <div class="container">
-        <div class="setting-wrap">
+        <div class="setting-wrap backup-wrap">
             <div class="section-head">
-                <p class="eyebrow">{{ __('ui.superadmin.backup.eyebrow') }}</p>
                 <h1>{{ __('ui.superadmin.backup.title') }}</h1>
                 <p>{{ __('ui.superadmin.backup.description') }}</p>
             </div>
@@ -15,8 +14,8 @@
                 <p class="setting-alert error">{{ $errors->first() }}</p>
             @endif
 
-            <div class="admin-service-page-list">
-                <div class="admin-service-page-card">
+            <div class="admin-service-page-list backup-card-list">
+                <div class="admin-service-page-card backup-card">
                     <h3>{{ __('ui.superadmin.backup.export_title') }}</h3>
                     <p>{{ __('ui.superadmin.backup.export_description') }}</p>
                     <form method="post" action="{{ route('superadmin.backup.export_sql') }}" class="setting-form">
@@ -27,7 +26,7 @@
                     </form>
                 </div>
 
-                <div class="admin-service-page-card">
+                <div class="admin-service-page-card backup-card">
                     <h3>{{ __('ui.superadmin.backup.restore_title') }}</h3>
                     <p>{{ __('ui.superadmin.backup.restore_description') }}</p>
                     <form method="post" action="{{ route('superadmin.backup.import_sql') }}" enctype="multipart/form-data" class="setting-form">

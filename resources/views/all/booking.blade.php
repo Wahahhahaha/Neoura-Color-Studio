@@ -185,7 +185,7 @@
 
             <div class="crop-stage-wrap">
                 <div class="crop-stage" data-booking-crop-stage>
-                    <img src="" alt="Crop payment proof" data-booking-crop-image>
+                    <img src="" alt="{{ __('ui.booking.crop_image_alt') }}" data-booking-crop-image>
                     <div class="crop-box" data-booking-crop-box>
                         <button type="button" class="crop-handle crop-handle-nw" data-booking-crop-handle="nw" aria-label="{{ __('ui.booking.resize_top_left') }}"></button>
                         <button type="button" class="crop-handle crop-handle-ne" data-booking-crop-handle="ne" aria-label="{{ __('ui.booking.resize_top_right') }}"></button>

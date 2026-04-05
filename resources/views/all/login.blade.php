@@ -1,7 +1,7 @@
-<main>
+<main class="login-main">
     <section class="section login-page">
         <div class="container">
-            <div class="login-card fade-in fade-in-soft">
+            <div class="login-card">
                 <div class="login-brand">
                     <img src="{{ $website['logo_url'] ?? asset('images/neora-logo.svg') }}" alt="{{ $website['name'] ?? 'Neora Color Studio' }} logo" class="login-logo">
                     <div>
@@ -9,6 +9,14 @@
                         <h1>{{ $website['name'] ?? 'Neora Color Studio' }}</h1>
                     </div>
                 </div>
+
+                <div class="login-alert" data-login-feedback role="alert" hidden></div>
+                @if ($errors->any())
+                    <div class="login-alert" role="alert">{{ $errors->first() }}</div>
+                @endif
+                @if (session('status'))
+                    <div class="login-alert success" role="status">{{ session('status') }}</div>
+                @endif
 
                 <form class="login-form" method="post" action="{{ route('login.submit') }}" novalidate data-login-form>
                     @csrf
@@ -75,84 +83,26 @@
     </section>
 </main>
 
-@if (!empty($recaptchaSiteKey))
-    <script src="https://www.google.com/recaptcha/api.js?onload=onRecaptchaLoaded&render=explicit" async defer></script>
-@endif
-
-@php
-    $loginPopupMessage = (string) session('login_popup_error', '');
-@endphp
 <div
     class="crop-modal login-popup-modal"
     data-login-popup-modal
-    data-popup-message="{{ e($loginPopupMessage) }}"
+    data-popup-message="{{ e((string) session('login_popup_error', '')) }}"
     hidden
 >
     <div class="crop-modal-backdrop" data-close-login-popup></div>
     <div class="crop-modal-dialog login-popup-dialog" role="dialog" aria-modal="true" aria-label="{{ __('ui.login.login_error_notice') }}">
+        <div class="crop-modal-head">
+            <h2>{{ __('ui.login.login_error_notice') }}</h2>
+            <button type="button" class="crop-close" data-close-login-popup aria-label="{{ __('ui.common.close') }}">&times;</button>
+        </div>
         <p class="account-email-notice-text" data-login-popup-text></p>
         <div class="crop-actions account-email-notice-footer">
             <button type="button" class="btn" data-close-login-popup>{{ __('ui.login.ok') }}</button>
         </div>
     </div>
 </div>
-<script>
-    (() => {
-        const popupModal = document.querySelector('[data-login-popup-modal]');
-        if (!popupModal) {
-            return;
-        }
 
-        const popupText = popupModal.querySelector('[data-login-popup-text]');
-        const closeNodes = Array.from(popupModal.querySelectorAll('[data-close-login-popup]'));
-        const message = (popupModal.getAttribute('data-popup-message') || '').trim();
-        let closeTimer = null;
-
-        const syncBodyScrollLock = () => {
-            const hasOpenModal = Boolean(document.querySelector('.crop-modal:not([hidden])'));
-            document.body.style.overflow = hasOpenModal ? 'hidden' : '';
-        };
-
-        const openPopup = (text) => {
-            if (!text) {
-                return;
-            }
-            if (closeTimer) {
-                window.clearTimeout(closeTimer);
-                closeTimer = null;
-            }
-
-            if (popupText) {
-                popupText.textContent = text;
-            }
-
-            popupModal.hidden = false;
-            popupModal.classList.remove('is-leave');
-            popupModal.classList.remove('is-enter');
-            window.requestAnimationFrame(() => popupModal.classList.add('is-enter'));
-            syncBodyScrollLock();
-        };
-
-        const closePopup = () => {
-            if (popupModal.hidden) {
-                return;
-            }
-
-            popupModal.classList.remove('is-enter');
-            popupModal.classList.add('is-leave');
-            if (closeTimer) {
-                window.clearTimeout(closeTimer);
-            }
-            closeTimer = window.setTimeout(() => {
-                popupModal.hidden = true;
-                popupModal.classList.remove('is-leave');
-                syncBodyScrollLock();
-                closeTimer = null;
-            }, 280);
-        };
-
-        closeNodes.forEach((node) => node.addEventListener('click', closePopup));
-        openPopup(message);
-    })();
-</script>
+@if (!empty($recaptchaSiteKey))
+    <script src="https://www.google.com/recaptcha/api.js?onload=onRecaptchaLoaded&render=explicit" async defer></script>
+@endif
 

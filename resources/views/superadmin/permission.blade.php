@@ -1,9 +1,9 @@
 <section class="section">
     <div class="container">
-        <div class="setting-wrap">
-            <div class="section-head">
-                <p class="eyebrow">{{ __('ui.superadmin.permission.eyebrow') }}</p>
-                <h1>{{ __('ui.superadmin.permission.title') }}</h1>
+        <div class="setting-wrap permission-shell">
+            <div class="section-head permission-head">
+<!--                 <p class="eyebrow">{{ __('ui.superadmin.permission.eyebrow') }}</p>
+ -->                <h1>{{ __('ui.superadmin.permission.title') }}</h1>
                 <p>{{ __('ui.superadmin.permission.description') }}</p>
             </div>
 

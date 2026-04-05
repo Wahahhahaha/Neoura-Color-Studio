@@ -7,8 +7,8 @@
         <div class="setting-wrap">
             <div class="section-head admin-payment-hero">
                 <div class="admin-payment-hero-copy">
-                    <p class="eyebrow">{{ __('ui.admin.payment.eyebrow') }}</p>
-                    <h1>{{ __('ui.admin.payment.title') }}</h1>
+<!--                     <p class="eyebrow">{{ __('ui.admin.payment.eyebrow') }}</p>
+ -->                    <h1>{{ __('ui.admin.payment.title') }}</h1>
                     <p>{{ __('ui.admin.payment.description') }}</p>
                 </div>
                 <div class="admin-payment-hero-summary">
@@ -17,10 +17,6 @@
                     </span>
                 </div>
             </div>
-
-            @if (session('status'))
-                <p class="setting-alert success">{{ session('status') }}</p>
-            @endif
 
             @if ($errors->any())
                 <p class="setting-alert error">{{ $errors->first() }}</p>
@@ -56,12 +52,12 @@
     </div>
 </section>
 
-<div class="crop-modal" data-proof-modal hidden>
+<div class="crop-modal" data-proof-modal data-proof-default-title="{{ __('ui.admin.payment.payment_proof') }}" hidden>
     <div class="crop-modal-backdrop" data-close-proof-modal></div>
     <div class="crop-modal-dialog proof-modal-dialog" role="dialog" aria-modal="true" aria-label="{{ __('ui.admin.payment.payment_proof') }}">
         <div class="crop-modal-head">
             <h2 data-proof-title>{{ __('ui.admin.payment.payment_proof') }}</h2>
-            <button type="button" class="crop-close" data-close-proof-modal aria-label="{{ __('ui.admin.payment.close_proof_modal') }}">x</button>
+            <button type="button" class="crop-close" data-close-proof-modal aria-label="{{ __('ui.admin.payment.close_proof_modal') }}">&times;</button>
         </div>
 
         <div class="proof-modal-body">
@@ -70,6 +66,30 @@
 
         <div class="crop-actions">
             <button type="button" class="btn btn-outline" data-close-proof-modal>{{ __('ui.common.close') }}</button>
+        </div>
+    </div>
+</div>
+
+<div
+    class="crop-modal payment-popup-modal"
+    data-payment-popup-modal
+    data-popup-type="{{ ($paymentPopupType ?? 'success') === 'error' ? 'error' : 'success' }}"
+    data-popup-message="{{ e((string) ($paymentPopupMessage ?? '')) }}"
+    data-popup-title-success="{{ __('ui.admin.payment.popup_title_success') }}"
+    data-popup-title-error="{{ __('ui.admin.payment.popup_title_error') }}"
+    data-popup-icon-ok="{{ __('ui.common.ok') }}"
+    hidden
+>
+    <div class="crop-modal-backdrop" data-close-payment-popup></div>
+    <div class="crop-modal-dialog payment-popup-dialog" role="dialog" aria-modal="true" aria-label="{{ __('ui.admin.payment.popup_notification_aria') }}">
+        <button type="button" class="crop-close payment-popup-close" data-close-payment-popup aria-label="{{ __('ui.common.close') }}">&times;</button>
+        <div class="payment-popup-icon" aria-hidden="true">
+            <span class="payment-popup-icon-glyph" data-payment-popup-icon-glyph>{{ __('ui.common.ok') }}</span>
+        </div>
+        <h2 class="payment-popup-title" data-payment-popup-title>{{ __('ui.admin.payment.popup_title_success') }}</h2>
+        <p class="payment-popup-text" data-payment-popup-text></p>
+        <div class="crop-actions payment-popup-actions">
+            <button type="button" class="btn" data-close-payment-popup>{{ __('ui.login.ok') }}</button>
         </div>
     </div>
 </div>

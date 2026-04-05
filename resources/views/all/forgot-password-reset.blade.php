@@ -1,4 +1,4 @@
-<main>
+<main class="forgot-main">
     <section class="section login-page">
         <div class="container">
             <div class="login-card fade-in fade-in-soft">
@@ -11,12 +11,13 @@
                 </div>
 
                 <p class="service-meta">{{ $formDescription ?? __('ui.forgot.reset.default_form_description') }}</p>
+                <div class="login-alert" data-reset-password-feedback role="alert" hidden></div>
 
                 @if ($errors->any())
                     <div class="login-alert" role="alert">{{ $errors->first() }}</div>
                 @endif
 
-                <form class="login-form" method="post" action="{{ $formAction ?? '#' }}" novalidate>
+                <form class="login-form" method="post" action="{{ $formAction ?? '#' }}" novalidate data-reset-password-form>
                     @csrf
 
                     <label for="new_password">{{ __('ui.forgot.reset.new_password') }}</label>

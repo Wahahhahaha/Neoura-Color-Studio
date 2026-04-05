@@ -264,6 +264,55 @@
         });
     });
 
+    const MODAL_FADE_MS = 240;
+    const modalCloseTimers = new WeakMap();
+    const syncBodyScrollLock = () => {
+        const hasOpenModal = Boolean(document.querySelector('.crop-modal:not([hidden])'));
+        document.body.style.overflow = hasOpenModal ? 'hidden' : '';
+    };
+
+    const openFadeModal = (targetModal) => {
+        if (!targetModal) {
+            return;
+        }
+
+        const timerId = modalCloseTimers.get(targetModal);
+        if (timerId) {
+            window.clearTimeout(timerId);
+            modalCloseTimers.delete(targetModal);
+        }
+
+        targetModal.hidden = false;
+        targetModal.classList.remove('is-leave');
+        targetModal.classList.remove('is-enter');
+        window.requestAnimationFrame(() => targetModal.classList.add('is-enter'));
+        syncBodyScrollLock();
+    };
+
+    const closeFadeModal = (targetModal, onAfter = null) => {
+        if (!targetModal || targetModal.hidden) {
+            if (typeof onAfter === 'function') {
+                onAfter();
+            }
+            return;
+        }
+
+        targetModal.classList.remove('is-enter');
+        targetModal.classList.add('is-leave');
+
+        const timerId = window.setTimeout(() => {
+            targetModal.hidden = true;
+            targetModal.classList.remove('is-leave');
+            modalCloseTimers.delete(targetModal);
+            syncBodyScrollLock();
+            if (typeof onAfter === 'function') {
+                onAfter();
+            }
+        }, MODAL_FADE_MS);
+
+        modalCloseTimers.set(targetModal, timerId);
+    };
+
     const bookingStatusForm = document.querySelector('.booking-status-form');
     const bookingVerifyModal = document.querySelector('[data-booking-verify-modal]');
     const openBookingVerifyBtn = document.querySelector('[data-open-booking-verify]');
@@ -286,15 +335,12 @@
             if (modalLast4Input && hiddenLast4) {
                 modalLast4Input.value = hiddenLast4.value || '';
             }
-            bookingVerifyModal.hidden = false;
-            document.body.style.overflow = 'hidden';
+            openFadeModal(bookingVerifyModal);
             modalLast4Input?.focus();
         };
 
         const closeVerifyModal = () => {
-            bookingVerifyModal.hidden = true;
-            document.body.style.overflow = '';
-            clearModalError();
+            closeFadeModal(bookingVerifyModal, clearModalError);
         };
 
         openBookingVerifyBtn.addEventListener('click', () => {
@@ -331,12 +377,8 @@
         const closeProofNodes = Array.from(proofModal.querySelectorAll('[data-close-proof-modal]'));
         const proofTitle = proofModal.querySelector('[data-proof-title]');
         const proofImage = proofModal.querySelector('[data-proof-image]');
+        const proofDefaultTitle = proofModal.getAttribute('data-proof-default-title') || 'Payment Proof';
         let proofCloseTimer = null;
-
-        const syncBodyScrollLock = () => {
-            const hasOpenModal = Boolean(document.querySelector('.crop-modal:not([hidden])'));
-            document.body.style.overflow = hasOpenModal ? 'hidden' : '';
-        };
 
         const closeProofModal = () => {
             if (proofModal.hidden) {
@@ -364,7 +406,7 @@
 
         const openProofModal = (button) => {
             const url = button.getAttribute('data-proof-url') || '';
-            const title = button.getAttribute('data-proof-title') || 'Payment Proof';
+            const title = button.getAttribute('data-proof-title') || proofDefaultTitle;
 
             if (proofCloseTimer) {
                 window.clearTimeout(proofCloseTimer);
@@ -409,10 +451,11 @@
         const aboutTitleTarget = document.querySelector('[data-about-title]');
         const aboutDescriptionTarget = document.querySelector('[data-about-description]');
         const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+        const aboutSaveFailedText = aboutForm?.getAttribute('data-i18n-about-save-failed') || 'Failed to save About Us.';
+        const aboutUpdatedText = aboutForm?.getAttribute('data-i18n-about-updated') || 'About Us updated.';
+        const aboutNetworkErrorText = aboutForm?.getAttribute('data-i18n-about-network-error') || 'Network error while saving About Us.';
         let initialTitle = aboutTitleInput ? aboutTitleInput.value : '';
         let initialDescription = aboutDescriptionInput ? aboutDescriptionInput.value : '';
-        let aboutCloseTimer = null;
-
         const setAboutFeedback = (type, text) => {
             if (!aboutFeedback) {
                 return;
@@ -443,22 +486,12 @@
         };
 
         const openAboutModal = () => {
-            aboutEditorModal.hidden = false;
-            aboutEditorModal.classList.remove('is-enter');
-            window.requestAnimationFrame(() => aboutEditorModal.classList.add('is-enter'));
-            document.body.style.overflow = 'hidden';
+            openFadeModal(aboutEditorModal);
         };
 
         const closeAboutModal = () => {
             resetAboutModal();
-            aboutEditorModal.classList.remove('is-enter');
-            if (aboutCloseTimer) {
-                window.clearTimeout(aboutCloseTimer);
-            }
-            aboutCloseTimer = window.setTimeout(() => {
-                aboutEditorModal.hidden = true;
-                document.body.style.overflow = '';
-            }, 220);
+            closeFadeModal(aboutEditorModal);
         };
 
         openAboutEditor.addEventListener('click', openAboutModal);
@@ -490,7 +523,7 @@
 
                 const payload = await response.json().catch(() => ({}));
                 if (!response.ok) {
-                    const errors = payload?.errors ? Object.values(payload.errors).flat().join(' ') : 'Failed to save About Us.';
+                    const errors = payload?.errors ? Object.values(payload.errors).flat().join(' ') : aboutSaveFailedText;
                     setAboutFeedback('error', errors);
                     return;
                 }
@@ -505,10 +538,10 @@
                 initialTitle = aboutTitleInput ? aboutTitleInput.value : initialTitle;
                 initialDescription = aboutDescriptionInput ? aboutDescriptionInput.value : initialDescription;
 
-                setAboutFeedback('success', payload?.message || 'About Us updated.');
+                setAboutFeedback('success', payload?.message || aboutUpdatedText);
                 window.setTimeout(() => closeAboutModal(), 260);
             } catch (_) {
-                setAboutFeedback('error', 'Network error while saving About Us.');
+                setAboutFeedback('error', aboutNetworkErrorText);
             } finally {
                 if (aboutSaveBtn) {
                     aboutSaveBtn.disabled = false;
@@ -529,9 +562,11 @@
         const titleTarget = document.querySelector('[data-contact-section-title]');
         const descriptionTarget = document.querySelector('[data-contact-section-description]');
         const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+        const contactSaveFailedText = contactForm?.getAttribute('data-i18n-contact-save-failed') || 'Failed to save Contact section.';
+        const contactUpdatedText = contactForm?.getAttribute('data-i18n-contact-updated') || 'Contact section updated.';
+        const contactNetworkErrorText = contactForm?.getAttribute('data-i18n-contact-network-error') || 'Network error while saving Contact section.';
         let initialTitle = titleInput ? titleInput.value : '';
         let initialDescription = descriptionInput ? descriptionInput.value : '';
-        let contactCloseTimer = null;
 
         const setContactFeedback = (type, text) => {
             if (!contactFeedback) {
@@ -563,25 +598,12 @@
         };
 
         const openContactModal = () => {
-            contactEditorModal.hidden = false;
-            contactEditorModal.classList.remove('is-leave');
-            contactEditorModal.classList.remove('is-enter');
-            window.requestAnimationFrame(() => contactEditorModal.classList.add('is-enter'));
-            document.body.style.overflow = 'hidden';
+            openFadeModal(contactEditorModal);
         };
 
         const closeContactModal = () => {
             resetContactModal();
-            contactEditorModal.classList.remove('is-enter');
-            contactEditorModal.classList.add('is-leave');
-            if (contactCloseTimer) {
-                window.clearTimeout(contactCloseTimer);
-            }
-            contactCloseTimer = window.setTimeout(() => {
-                contactEditorModal.hidden = true;
-                contactEditorModal.classList.remove('is-leave');
-                document.body.style.overflow = '';
-            }, 220);
+            closeFadeModal(contactEditorModal);
         };
 
         openContactEditor.addEventListener('click', openContactModal);
@@ -613,7 +635,7 @@
 
                 const payload = await response.json().catch(() => ({}));
                 if (!response.ok) {
-                    const errors = payload?.errors ? Object.values(payload.errors).flat().join(' ') : 'Failed to save Contact section.';
+                    const errors = payload?.errors ? Object.values(payload.errors).flat().join(' ') : contactSaveFailedText;
                     setContactFeedback('error', errors);
                     return;
                 }
@@ -631,10 +653,10 @@
                 initialTitle = titleInput ? titleInput.value : initialTitle;
                 initialDescription = descriptionInput ? descriptionInput.value : initialDescription;
 
-                setContactFeedback('success', payload?.message || 'Contact section updated.');
+                setContactFeedback('success', payload?.message || contactUpdatedText);
                 window.setTimeout(() => closeContactModal(), 260);
             } catch (_) {
-                setContactFeedback('error', 'Network error while saving Contact section.');
+                setContactFeedback('error', contactNetworkErrorText);
             } finally {
                 if (contactSaveBtn) {
                     contactSaveBtn.disabled = false;
@@ -656,6 +678,11 @@
         const carouselAutoplayInput = carouselEditorModal.querySelector('#carousel_autoplay_ms');
         const initialSlideListMarkup = slideList ? slideList.innerHTML : '';
         const initialCarouselAutoplay = carouselAutoplayInput ? carouselAutoplayInput.value : '';
+        const slideLabelTemplate = carouselEditorModal.getAttribute('data-i18n-slide-label') || 'Slide :number';
+        const carouselSaveFailedText = carouselEditorModal.getAttribute('data-i18n-carousel-save-failed') || 'Failed to save changes.';
+        const savedText = carouselEditorModal.getAttribute('data-i18n-saved') || 'Saved.';
+        const carouselNetworkErrorText = carouselEditorModal.getAttribute('data-i18n-carousel-network-error') || 'Network error while saving.';
+        const slidePreviewAltText = carouselEditorModal.getAttribute('data-i18n-slide-preview-alt') || 'Slide preview';
         const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 
         const cropModal = document.querySelector('[data-carousel-crop-modal]');
@@ -665,7 +692,6 @@
         const cropZoomInput = cropModal?.querySelector('[data-carousel-crop-zoom]');
         const cropApplyBtn = cropModal?.querySelector('[data-apply-carousel-crop]');
         const cropCloseNodes = cropModal ? Array.from(cropModal.querySelectorAll('[data-close-carousel-crop]')) : [];
-        let editorCloseTimer = null;
 
         const syncSlideFields = () => {
             if (!slideList) {
@@ -676,7 +702,7 @@
             cards.forEach((card, index) => {
                 const heading = card.querySelector('[data-slide-heading]');
                 if (heading) {
-                    heading.textContent = `Slide ${index + 1}`;
+                    heading.textContent = slideLabelTemplate.replace(':number', String(index + 1));
                 }
 
                 const fields = Array.from(card.querySelectorAll('[data-field]'));
@@ -696,10 +722,7 @@
         };
 
         const openEditor = () => {
-            carouselEditorModal.hidden = false;
-            carouselEditorModal.classList.remove('is-enter');
-            window.requestAnimationFrame(() => carouselEditorModal.classList.add('is-enter'));
-            document.body.style.overflow = 'hidden';
+            openFadeModal(carouselEditorModal);
         };
 
         const setFeedback = (type, text) => {
@@ -735,14 +758,7 @@
 
         const closeEditor = () => {
             resetEditorState();
-            carouselEditorModal.classList.remove('is-enter');
-            if (editorCloseTimer) {
-                window.clearTimeout(editorCloseTimer);
-            }
-            editorCloseTimer = window.setTimeout(() => {
-                carouselEditorModal.hidden = true;
-                document.body.style.overflow = '';
-            }, 220);
+            closeFadeModal(carouselEditorModal);
         };
 
         const appendSlideCard = () => {
@@ -799,15 +815,15 @@
 
                 const payload = await response.json().catch(() => ({}));
                 if (!response.ok) {
-                    const errors = payload?.errors ? Object.values(payload.errors).flat().join(' ') : 'Failed to save changes.';
+                    const errors = payload?.errors ? Object.values(payload.errors).flat().join(' ') : carouselSaveFailedText;
                     setFeedback('error', errors);
                     return;
                 }
 
-                setFeedback('success', payload?.message || 'Saved.');
+                setFeedback('success', payload?.message || savedText);
                 window.setTimeout(() => window.location.reload(), 500);
             } catch (_) {
-                setFeedback('error', 'Network error while saving.');
+                setFeedback('error', carouselNetworkErrorText);
             } finally {
                 if (saveBtn) {
                     saveBtn.disabled = false;
@@ -894,15 +910,14 @@
         };
 
         const openCropModal = () => {
-            cropModal.hidden = false;
-            document.body.style.overflow = 'hidden';
+            openFadeModal(cropModal);
         };
 
         const closeCropModal = () => {
-            cropModal.hidden = true;
-            document.body.style.overflow = '';
-            cropAction = null;
-            cropStage.classList.remove('is-dragging');
+            closeFadeModal(cropModal, () => {
+                cropAction = null;
+                cropStage.classList.remove('is-dragging');
+            });
         };
 
         const clampCropMove = () => {
@@ -1115,7 +1130,7 @@
                         if (!preview) {
                             preview = document.createElement('img');
                             preview.className = 'carousel-editor-preview';
-                            preview.alt = 'Slide preview';
+                            preview.alt = slidePreviewAltText;
                             const header = card.querySelector('.carousel-editor-card-head');
                             if (header) {
                                 header.insertAdjacentElement('afterend', preview);

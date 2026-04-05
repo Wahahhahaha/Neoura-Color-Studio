@@ -42,7 +42,6 @@
         <div class="financial-shell">
             <div class="financial-hero">
                 <div>
-                    <p class="eyebrow">Admin Panel</p>
                     <h1>Financial Report</h1>
                     <p>Income data is generated from approved transactions in Payment Validation.</p>
                 </div>

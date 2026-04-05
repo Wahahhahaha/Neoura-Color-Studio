@@ -1,15 +1,125 @@
 :root {
-    --bg: #ffffff;
-    --surface: #f5f5f5;
-    --surface-2: #eaeaea;
+    --bg: #fffaf2;
+    --surface: #f7efe4;
+    --surface-2: #efe2d1;
     --ink: #222222;
     --muted: #666666;
     --line: #e6e2dd;
-    --accent: #f2d5c4;
-    --accent-strong: #e5bea8;
+    --accent: #f7e7ce;
+    --accent-strong: #c6a67a;
     --accent-soft: var(--accent);
     --accent-bold: var(--accent-strong);
     --shadow: 0 18px 45px rgba(34, 34, 34, 0.08);
+}
+
+/* Champagne Theme Harmonization */
+:root {
+    --champ-bg-soft: #fffaf2;
+    --champ-bg: #f9f1e6;
+    --champ-surface: #fffdf9;
+    --champ-surface-2: #f7ede0;
+    --champ-line: #e8d8c4;
+    --champ-text: #5f5044;
+    --champ-strong: #b8956a;
+}
+
+body,
+.home-main,
+.financial-page,
+.service-page-section,
+.setting-page,
+.account-page {
+    background: linear-gradient(180deg, var(--champ-bg-soft) 0%, var(--champ-bg) 100%);
+}
+
+.site-header,
+.site-footer,
+.site-header.site-header-with-admin::before,
+.site-footer.site-footer-with-admin::before,
+.admin-sidebar {
+    background: color-mix(in srgb, var(--champ-surface) 94%, #ffffff 6%);
+}
+
+.login-card,
+.booking-form,
+.booking-status-box,
+.setting-wrap,
+.user-data-shell,
+.service-page-shell,
+.admin-service-page-card,
+.admin-service-row,
+.financial-shell,
+.financial-card,
+.financial-summary-card,
+.financial-filter-card,
+.financial-hero,
+.recycle-shell,
+.permission-shell,
+.backup-shell,
+.error-card,
+.account-email-success-card {
+    background: linear-gradient(180deg, var(--champ-surface) 0%, var(--champ-surface-2) 100%);
+    border-color: var(--champ-line);
+}
+
+.admin-user-table th,
+.financial-table th,
+.admin-user-table td,
+.financial-table td {
+    border-color: color-mix(in srgb, var(--champ-line) 78%, #d8c5ad 22%);
+}
+
+.admin-user-table th,
+.financial-table th {
+    background: color-mix(in srgb, var(--champ-surface-2) 85%, #f3e6d6 15%);
+    color: var(--champ-text);
+}
+
+.admin-user-table tbody tr:nth-child(even),
+.financial-table tbody tr:nth-child(even) {
+    background: color-mix(in srgb, var(--champ-surface) 82%, #f4e6d5 18%);
+}
+
+.admin-user-table tbody tr:hover,
+.financial-table tbody tr:hover {
+    background: color-mix(in srgb, var(--accent-soft) 32%, #ffffff 68%);
+}
+
+.setting-alert,
+.login-alert,
+.carousel-editor-feedback,
+.form-message {
+    border-color: color-mix(in srgb, var(--champ-line) 86%, #c7a981 14%);
+    background: color-mix(in srgb, var(--champ-surface-2) 88%, #f5e7d5 12%);
+    color: var(--champ-text);
+}
+
+.setting-alert.success,
+.login-alert.success,
+.carousel-editor-feedback.success,
+.form-message.success,
+.booking-status-pill.is-success {
+    border-color: color-mix(in srgb, var(--champ-strong) 56%, #d8c2a5 44%);
+    background: color-mix(in srgb, var(--accent-soft) 54%, #ffffff 46%);
+    color: #5e4d3e;
+}
+
+.setting-alert.error,
+.carousel-editor-feedback.error,
+.form-message.error,
+.booking-status-pill.is-error,
+.booking-status-pill.is-failed {
+    border-color: color-mix(in srgb, var(--champ-strong) 46%, #d9b7a2 54%);
+    background: color-mix(in srgb, #f3dfcf 64%, #ffffff 36%);
+    color: #6c4a3a;
+}
+
+.financial-hero-pill,
+.lang-switcher,
+.booking-success-dialog,
+.crop-modal-dialog {
+    background: color-mix(in srgb, var(--champ-surface) 94%, #ffffff 6%);
+    border-color: var(--champ-line);
 }
 
 /* Keep all button-like controls flat (no shadow) across states */
@@ -65,13 +175,14 @@ input[type='reset']:active,
 
 html {
     scroll-behavior: smooth;
+    background: #f9f2e8;
 }
 
 body {
     margin: 0;
     font-family: 'Poppins', sans-serif;
     color: var(--ink);
-    background: linear-gradient(180deg, #ffffff 0%, #fbfbfb 100%);
+    background: linear-gradient(180deg, #fffdf9 0%, #f9f2e8 100%);
 }
 
 h1,
@@ -395,6 +506,13 @@ img {
     font-size: 12px;
 }
 
+.admin-sidebar-description {
+    margin: 6px 0 0;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
 .admin-sidebar-dual {
     display: grid;
     grid-template-columns: 56px minmax(0, 1fr);
@@ -542,12 +660,17 @@ img {
 }
 
 .admin-sidebar-footer {
-    margin-top: 12px;
-    margin-bottom: 4px;
+    margin-top: auto;
+    margin-bottom: 0;
     padding-top: 10px;
+    padding-bottom: 4px;
     border-top: 1px solid #efe8e3;
     display: grid;
     gap: 8px;
+    position: sticky;
+    bottom: 0;
+    background: color-mix(in srgb, var(--champ-surface, #fffdfa) 92%, #ffffff 8%);
+    z-index: 5;
 }
 
 .admin-logout-form {
@@ -1248,9 +1371,22 @@ img {
 }
 
 .login-page {
-    min-height: calc(100vh - 160px);
+    min-height: calc(100vh - 150px);
+    min-height: calc(100svh - 150px);
+    padding-top: 32px;
+    padding-bottom: 32px;
     display: flex;
     align-items: center;
+}
+
+.login-main {
+    min-height: calc(100vh - 74px - 73px);
+    min-height: calc(100svh - 74px - 73px);
+    display: flex;
+}
+
+.login-main .login-page {
+    width: 100%;
 }
 
 .login-card {
@@ -2046,6 +2182,8 @@ img {
     position: absolute;
     inset: 0;
     background: rgba(20, 20, 20, 0.5);
+    opacity: 0;
+    transition: opacity 0.22s ease;
 }
 
 .service-fade-modal .crop-modal-backdrop {
@@ -2062,6 +2200,18 @@ img {
     border: 1px solid var(--line);
     box-shadow: var(--shadow);
     padding: 18px;
+    opacity: 0;
+    transition: opacity 0.22s ease;
+}
+
+.crop-modal.is-enter .crop-modal-backdrop,
+.crop-modal.is-enter .crop-modal-dialog {
+    opacity: 1;
+}
+
+.crop-modal.is-leave .crop-modal-backdrop,
+.crop-modal.is-leave .crop-modal-dialog {
+    opacity: 0;
 }
 
 .service-fade-modal .service-modal-dialog {
@@ -2238,6 +2388,114 @@ img {
 
 .login-popup-dialog .account-email-notice-footer {
     justify-content: center;
+}
+
+.payment-popup-modal .crop-modal-backdrop {
+    opacity: 0;
+    transition: opacity 0.26s ease;
+}
+
+.payment-popup-dialog {
+    width: min(440px, 92vw);
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    margin: 0;
+    padding: 22px 20px 18px;
+    transform: translate(-50%, -48%) scale(0.985);
+    opacity: 0;
+    border: 1px solid #e2ddd8;
+    border-radius: 16px;
+    background: #ffffff !important;
+    box-shadow: 0 14px 34px rgba(24, 24, 24, 0.14);
+    transition: opacity 0.26s ease, transform 0.26s ease;
+    text-align: center;
+}
+
+.payment-popup-close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    border-color: #e7ddd7;
+    background: #fff;
+    color: #444;
+}
+
+.payment-popup-close:hover,
+.payment-popup-close:focus {
+    border-color: #dad0c9;
+    background: #faf8f6;
+}
+
+.payment-popup-icon {
+    display: none;
+}
+
+.payment-popup-icon-glyph {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: #2f7a45;
+}
+
+.payment-popup-title {
+    margin: 0 0 6px;
+    font-size: 24px;
+    line-height: 1.2;
+    color: #3f332a;
+}
+
+.payment-popup-text {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.65;
+    color: #5f5145;
+}
+
+.payment-popup-actions {
+    justify-content: center;
+    margin-top: 16px;
+}
+
+.payment-popup-actions .btn {
+    min-width: 108px;
+    min-height: 38px;
+}
+
+.payment-popup-modal.is-enter .crop-modal-backdrop {
+    opacity: 1;
+}
+
+.payment-popup-modal.is-enter .payment-popup-dialog {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+}
+
+.payment-popup-modal.is-leave .crop-modal-backdrop {
+    opacity: 0;
+}
+
+.payment-popup-modal.is-leave .payment-popup-dialog {
+    opacity: 0;
+    transform: translate(-50%, -48%) scale(0.985);
+}
+
+.payment-popup-modal.is-error .payment-popup-dialog {
+    border-color: #e2ddd8;
+    background: #ffffff !important;
+}
+
+.payment-popup-modal.is-error .payment-popup-icon {
+    border-color: #b8dfc2;
+    background: #ecf9f0;
+}
+
+.payment-popup-modal.is-error .payment-popup-icon-glyph {
+    color: #2f7a45;
+}
+
+.payment-popup-modal.is-error .payment-popup-title {
+    color: #3f332a;
 }
 
 .crop-modal-dialog.booking-success-dialog {
@@ -4397,14 +4655,25 @@ img {
 }
 
 .proof-modal-dialog {
-    width: min(680px, 94vw);
+    width: min(920px, calc(100vw - 28px));
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    margin: 0;
+    padding: 0;
+    border-radius: 18px;
+    border-color: #dfd2c3;
+    box-shadow: 0 24px 58px rgba(42, 29, 18, 0.22);
+    overflow: hidden;
     opacity: 0;
-    transform: translateY(18px) scale(0.985);
+    transform: translate(-50%, -46%) scale(0.985);
     transition: opacity 0.24s ease, transform 0.24s ease;
 }
 
 [data-proof-modal] .crop-modal-backdrop {
     opacity: 0;
+    background: rgba(26, 18, 10, 0.5);
+    backdrop-filter: blur(2px);
     transition: opacity 0.24s ease;
 }
 
@@ -4414,7 +4683,7 @@ img {
 
 [data-proof-modal].is-enter .proof-modal-dialog {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translate(-50%, -50%) scale(1);
 }
 
 [data-proof-modal].is-leave .crop-modal-backdrop {
@@ -4423,21 +4692,106 @@ img {
 
 [data-proof-modal].is-leave .proof-modal-dialog {
     opacity: 0;
-    transform: translateY(18px) scale(0.985);
+    transform: translate(-50%, -46%) scale(0.985);
+}
+
+.proof-modal-dialog .crop-modal-head {
+    margin: 0;
+    padding: 15px 18px;
+    border-bottom: 1px solid #ece1d4;
+    background: linear-gradient(180deg, #fffefb 0%, #fdf6ee 100%);
+}
+
+.proof-modal-dialog .crop-modal-head h2 {
+    font-size: clamp(18px, 2.2vw, 22px);
+    line-height: 1.2;
+}
+
+.proof-modal-dialog .crop-close {
+    border-color: #e2d6c8;
+    background: #fffcf7;
+    color: #4f4136;
+}
+
+.proof-modal-dialog .crop-close:hover,
+.proof-modal-dialog .crop-close:focus {
+    border-color: #d0c1af;
+    background: #fff7eb;
 }
 
 .proof-modal-body {
     display: grid;
-    gap: 10px;
+    place-items: center;
+    padding: 16px;
+    max-height: calc(100vh - 200px);
+    overflow: auto;
+    background: #fbf6f0;
 }
 
 .proof-modal-image {
     width: 100%;
-    max-height: 68vh;
+    max-height: calc(100vh - 260px);
     object-fit: contain;
-    border-radius: 10px;
-    border: 1px solid #ddd8d3;
+    border-radius: 12px;
+    border: 1px solid #ddd1c3;
     background: #fff;
+}
+
+.proof-modal-dialog .crop-actions {
+    margin: 0;
+    padding: 14px 18px;
+    border-top: 1px solid #ece1d4;
+    background: #fff;
+    justify-content: flex-end;
+}
+
+.proof-modal-dialog .crop-actions .btn {
+    min-height: 40px;
+    min-width: 100px;
+}
+
+@media (max-width: 640px) {
+    .payment-popup-dialog {
+        width: calc(100vw - 20px);
+        padding: 22px 16px 16px;
+        border-radius: 16px;
+    }
+
+    .payment-popup-icon {
+        width: 56px;
+        height: 56px;
+        margin-bottom: 12px;
+    }
+
+    .payment-popup-title {
+        font-size: 22px;
+    }
+
+    .proof-modal-dialog {
+        width: calc(100vw - 16px);
+        border-radius: 14px;
+    }
+
+    .proof-modal-dialog .crop-modal-head {
+        padding: 12px 14px;
+    }
+
+    .proof-modal-body {
+        padding: 10px;
+        max-height: calc(100vh - 160px);
+    }
+
+    .proof-modal-image {
+        max-height: calc(100vh - 210px);
+    }
+
+    .proof-modal-dialog .crop-actions {
+        padding: 10px 14px;
+    }
+
+    .proof-modal-dialog .crop-actions .btn {
+        width: 100%;
+    }
 }
 
 .service-modal-dialog {
@@ -5148,4 +5502,1720 @@ img {
         border-radius: 14px;
         padding: 22px 18px;
     }
+}
+
+/* Final Champagne Overrides */
+body,
+.home-main,
+.financial-page,
+.service-page-section,
+.setting-page,
+.account-page {
+    background: linear-gradient(180deg, var(--champ-bg-soft) 0%, var(--champ-bg) 100%) !important;
+}
+
+.site-header,
+.site-footer,
+.admin-sidebar {
+    background: color-mix(in srgb, var(--champ-surface) 94%, #ffffff 6%) !important;
+}
+
+.login-card,
+.booking-form,
+.booking-status-box,
+.setting-wrap,
+.user-data-shell,
+.service-page-shell,
+.admin-service-page-card,
+.admin-service-row,
+.financial-shell,
+.financial-card,
+.financial-summary-card,
+.financial-filter-card,
+.financial-hero,
+.error-card,
+.account-email-success-card,
+.crop-modal-dialog {
+    background: linear-gradient(180deg, var(--champ-surface) 0%, var(--champ-surface-2) 100%) !important;
+    border-color: var(--champ-line) !important;
+}
+
+.setting-alert,
+.login-alert,
+.carousel-editor-feedback,
+.form-message,
+.booking-status-pill.is-success,
+.booking-status-pill.is-error,
+.booking-status-pill.is-failed {
+    border-color: color-mix(in srgb, var(--champ-strong) 48%, #d8c2a5 52%) !important;
+    background: color-mix(in srgb, var(--accent-soft) 56%, #ffffff 44%) !important;
+    color: #5f5044 !important;
+}
+
+.admin-user-table th,
+.financial-table th {
+    background: color-mix(in srgb, var(--champ-surface-2) 85%, #f3e6d6 15%) !important;
+    color: var(--champ-text) !important;
+}
+
+/* Backup Page Balance Tuning */
+.backup-page {
+    background: #fcf8f2 !important;
+}
+
+.backup-wrap {
+    border-color: color-mix(in srgb, var(--champ-line) 78%, #dcc7aa 22%) !important;
+    background: #fffdfa !important;
+}
+
+.backup-wrap .section-head h1 {
+    color: #4f3f33;
+}
+
+.backup-wrap .section-head p {
+    color: #6f5e50;
+}
+
+.backup-card-list {
+    gap: 18px;
+}
+
+.backup-card {
+    border: 1px solid color-mix(in srgb, var(--champ-line) 76%, #d8bea0 24%) !important;
+    background: #ffffff !important;
+    box-shadow: 0 10px 28px rgba(84, 63, 45, 0.08);
+}
+
+.backup-card h3 {
+    color: #584637;
+}
+
+.backup-card p {
+    color: #736357;
+}
+
+.backup-card .setting-form {
+    background: transparent !important;
+}
+
+.backup-card .setting-form label {
+    color: #5c4b3d;
+}
+
+.backup-card .setting-form input[type='file'] {
+    border-color: color-mix(in srgb, var(--champ-line) 72%, #d2b28f 28%);
+    background: #ffffff;
+}
+
+.backup-card .btn {
+    background: #ffffff !important;
+    border-color: #1a1a1a !important;
+    color: #1a1a1a !important;
+    box-shadow: none !important;
+}
+
+.backup-card .btn:hover {
+    background: #f4f4f4 !important;
+    border-color: #000000 !important;
+    color: #000000 !important;
+}
+
+.backup-wrap .setting-alert {
+    border-color: color-mix(in srgb, var(--champ-line) 72%, #d2b18d 28%) !important;
+    background: color-mix(in srgb, #fffaf2 74%, #f3e6d6 26%) !important;
+    color: #5f5044 !important;
+}
+
+/* Financial Page White Balance */
+.financial-page {
+    background: #fcf8f2 !important;
+}
+
+.financial-shell,
+.financial-filter-card,
+.financial-card,
+.financial-summary-card,
+.financial-hero,
+.financial-hero-pill,
+.financial-chart-canvas {
+    background: #ffffff !important;
+    border-color: color-mix(in srgb, var(--champ-line) 72%, #dbc3a4 28%) !important;
+}
+
+.financial-summary-card,
+.financial-card,
+.financial-filter-card,
+.financial-hero {
+    box-shadow: 0 8px 22px rgba(84, 63, 45, 0.06) !important;
+}
+
+.financial-table th,
+.admin-user-table.financial-table th {
+    background: #f9f3ea !important;
+    color: #5d4e40 !important;
+}
+
+.financial-table td,
+.admin-user-table.financial-table td {
+    background: #fffdf9;
+    border-color: color-mix(in srgb, var(--champ-line) 72%, #dcc5a8 28%) !important;
+}
+
+.financial-table tbody tr:nth-child(even) td {
+    background: #fefaf4 !important;
+}
+
+.financial-table tbody tr:hover td {
+    background: #f8efe3 !important;
+}
+
+.financial-month-nav strong,
+.financial-kicker,
+.financial-card-head h2,
+.financial-hero h1 {
+    color: #544436;
+}
+
+.financial-hero p,
+.financial-summary-card p,
+.financial-summary-card small {
+    color: #756456;
+}
+
+/* Footer Tone Alignment */
+.site-footer {
+    background: #fffdfa !important;
+    border-top: 1px solid color-mix(in srgb, var(--champ-line) 74%, #dbc3a3 26%) !important;
+    color: #6e5d4f !important;
+}
+
+.site-footer.site-footer-with-admin {
+    background: #fffdfa !important;
+}
+
+.site-footer.site-footer-with-admin::before {
+    background: #fffdfa !important;
+    border-right: 1px solid color-mix(in srgb, var(--champ-line) 74%, #dbc3a3 26%) !important;
+    border-top: 1px solid color-mix(in srgb, var(--champ-line) 74%, #dbc3a3 26%) !important;
+}
+
+.site-footer.site-footer-with-admin > .container {
+    border-top: 1px solid color-mix(in srgb, var(--champ-line) 74%, #dbc3a3 26%) !important;
+}
+
+/* Service Page White Balance */
+.service-page-shell {
+    background: #fffdfa !important;
+    border-color: color-mix(in srgb, var(--champ-line) 74%, #dbc3a3 26%) !important;
+}
+
+.admin-service-hero h1 {
+    color: #4f3f33;
+}
+
+.admin-service-hero p {
+    color: #705f51;
+}
+
+.admin-service-stat-pill {
+    background: #fff7ec !important;
+    border-color: color-mix(in srgb, var(--champ-line) 76%, #d9bea0 24%) !important;
+    color: #604f41 !important;
+}
+
+.admin-service-list-surface {
+    background: #fffdf9 !important;
+    border: 1px solid color-mix(in srgb, var(--champ-line) 72%, #dbc2a2 28%) !important;
+}
+
+.admin-service-row {
+    background: #ffffff !important;
+    border-color: color-mix(in srgb, var(--champ-line) 72%, #dbc2a2 28%) !important;
+    box-shadow: 0 8px 20px rgba(84, 63, 45, 0.05);
+}
+
+.admin-service-row-head h3,
+.admin-service-inline-meta-item strong {
+    color: #4f3f33;
+}
+
+.admin-service-detail,
+.admin-service-inline-meta-item span {
+    color: #726154;
+}
+
+.admin-service-desc-chips li {
+    background: #fff8ef !important;
+    border-color: color-mix(in srgb, var(--champ-line) 72%, #d9bf9f 28%) !important;
+    color: #5f4e40;
+}
+
+.service-modal-dialog {
+    background: #fffdfa !important;
+    border-color: color-mix(in srgb, var(--champ-line) 72%, #dbc2a2 28%) !important;
+}
+
+.service-modal-form input,
+.service-modal-form textarea,
+.service-modal-form select {
+    background: #ffffff !important;
+    border-color: color-mix(in srgb, var(--champ-line) 72%, #d9be9e 28%) !important;
+}
+
+.service-modal-form label {
+    color: #5d4c3f !important;
+}
+
+.service-modal-actions {
+    border-top: 1px solid color-mix(in srgb, var(--champ-line) 72%, #dbc2a2 28%) !important;
+}
+
+/* User Data Page White Balance */
+.user-data-shell {
+    background: #ffffff !important;
+    border-color: #eadfce !important;
+    box-shadow: 0 10px 24px rgba(82, 63, 46, 0.05);
+}
+
+.user-data-head h1 {
+    color: #47392f;
+}
+
+.user-data-head p,
+.user-data-meta {
+    color: #6f6258;
+}
+
+.user-data-controls .admin-user-search-box,
+.user-data-controls .admin-user-level-filter {
+    background: #fdf9f3 !important;
+    border-color: #e6d9c7 !important;
+}
+
+.user-data-controls .admin-user-search-box input,
+.user-data-controls .admin-user-level-filter select {
+    background: #ffffff !important;
+    border-color: #deceba !important;
+}
+
+.user-data-table-shell {
+    background: #ffffff !important;
+    border-color: #e7dac9 !important;
+}
+
+.user-data-table th,
+.admin-user-table.user-data-table th {
+    background: #f8f2ea !important;
+    color: #5a4b3f !important;
+    border-color: #e4d5c2 !important;
+}
+
+.user-data-table td,
+.admin-user-table.user-data-table td {
+    background: #ffffff !important;
+    color: #5d5046;
+    border-color: #e8ddcf !important;
+}
+
+.user-data-table tbody tr:nth-child(even) td {
+    background: #fdf9f3 !important;
+}
+
+.user-data-table tbody tr:hover td {
+    background: #f7efe4 !important;
+}
+
+.user-level-badge {
+    background: #fbf4ea !important;
+    border-color: #e2d2be !important;
+    color: #5b4b3f !important;
+}
+
+.user-data-table .admin-user-action-btn {
+    background: #ffffff !important;
+    border-color: #dfd1c0 !important;
+}
+
+.user-data-table .admin-user-action-btn:hover {
+    background: #f9f1e6 !important;
+}
+
+.user-data-pagination .admin-user-pagination-meta,
+.user-data-pagination .admin-user-pagination-page {
+    color: #6a5a4d;
+}
+
+/* Home Booking Status Card Balance */
+.booking-status-box {
+    background: #fffdfa !important;
+    border: 1px solid #eadfce !important;
+    box-shadow: 0 10px 24px rgba(82, 63, 46, 0.05);
+}
+
+.booking-status-head h3 {
+    color: #4d3f34;
+}
+
+.booking-status-head p {
+    color: #726459;
+}
+
+.booking-status-label {
+    color: #6b5d52;
+}
+
+.booking-status-input {
+    background: #ffffff !important;
+    border-color: #dfd1bf !important;
+}
+
+.booking-status-input:focus {
+    border-color: #b8956a !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, #f4e5d1 62%, #ffffff 38%) !important;
+}
+
+.booking-status-search-btn,
+.booking-status-box .btn,
+.booking-verify-dialog .btn {
+    background: #ffffff !important;
+    border-color: #111111 !important;
+    color: #111111 !important;
+}
+
+.booking-status-search-btn:hover,
+.booking-status-search-btn:focus,
+.booking-status-box .btn:hover,
+.booking-status-box .btn:focus,
+.booking-verify-dialog .btn:hover,
+.booking-verify-dialog .btn:focus {
+    background: #f5f5f5 !important;
+    border-color: #000000 !important;
+    color: #000000 !important;
+}
+
+.booking-status-box .btn.btn-outline,
+.booking-verify-dialog .btn.btn-outline {
+    background: #ffffff !important;
+    border-color: #111111 !important;
+    color: #111111 !important;
+}
+
+.booking-status-box .btn.btn-outline:hover,
+.booking-status-box .btn.btn-outline:focus,
+.booking-verify-dialog .btn.btn-outline:hover,
+.booking-verify-dialog .btn.btn-outline:focus {
+    background: #f5f5f5 !important;
+    border-color: #000000 !important;
+    color: #000000 !important;
+}
+
+.booking-status-result {
+    background: #fff9f1 !important;
+    border-color: #e4d6c5 !important;
+}
+
+.booking-status-result span {
+    color: #7a6b60;
+}
+
+.booking-status-result strong {
+    color: #4d3f34;
+}
+
+.booking-status-pill {
+    border: 1px solid #e0d0bc;
+}
+
+.booking-status-pill.is-pending {
+    background: #f9efdf !important;
+    color: #7b5a35 !important;
+}
+
+.booking-status-pill.is-success {
+    background: #efe7da !important;
+    color: #5c4d3e !important;
+}
+
+.booking-status-pill.is-danger,
+.booking-status-pill.is-error,
+.booking-status-pill.is-failed {
+    background: #f4e6da !important;
+    color: #7a4f39 !important;
+}
+
+/* Booking Page Flat Color Overrides (No Gradient) */
+body:has(.booking-page) {
+    background: #f4ede3 !important;
+}
+
+.booking-page {
+    background: #f4ede3;
+}
+
+.booking-page .booking-wrap {
+    background: #fff9f2;
+    border-color: #e3d4c2;
+    box-shadow: 0 12px 28px rgba(74, 56, 40, 0.07);
+}
+
+.booking-page .booking-form {
+    background: #fffdf8 !important;
+    border: 1px solid #e8dbc9;
+    border-radius: 14px;
+    padding: 16px;
+}
+
+.booking-page .booking-package-meta,
+.booking-page .service-meta {
+    color: #6e5f53;
+}
+
+.booking-page .package-detail-box,
+.booking-page .payment-box {
+    background: #fff6ec;
+    border-color: #e7d8c6;
+}
+
+.booking-page .booking-form input,
+.booking-page .booking-form select,
+.booking-page .booking-date-input,
+.booking-page .booking-time-select {
+    background: #ffffff !important;
+    border-color: #ddcfbc;
+    color: #3f3228;
+}
+
+.booking-page .booking-field-shell::after {
+    border-right-color: #8f7356;
+    border-bottom-color: #8f7356;
+}
+
+.booking-page .booking-form input:focus,
+.booking-page .booking-form select:focus,
+.booking-page .booking-date-input:focus,
+.booking-page .booking-time-select:focus {
+    outline: none;
+    border-color: #b8956a;
+    box-shadow: 0 0 0 3px rgba(184, 149, 106, 0.2);
+}
+
+.booking-success-modal .crop-modal-dialog,
+.booking-confirm-modal .crop-modal-dialog,
+.booking-crop-modal .crop-modal-dialog {
+    background: #fffaf4 !important;
+    border-color: #e4d5c3 !important;
+}
+
+/* Home Section Spacing: About -> Service */
+#about.section {
+    padding-bottom: 44px;
+}
+
+#service.section {
+    padding-top: 44px;
+    padding-bottom: 44px;
+}
+
+#contact.section {
+    padding-top: 44px;
+}
+
+/* Service Modal Polish (Add + Edit) */
+.service-modal-dialog {
+    width: min(680px, 94vw);
+    max-height: 88svh;
+    display: flex;
+    flex-direction: column;
+    border-radius: 18px;
+}
+
+.service-modal-dialog .crop-modal-head {
+    margin-bottom: 0;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #e7daca;
+}
+
+.service-modal-dialog .crop-modal-head h2 {
+    font-size: clamp(20px, 2.3vw, 24px);
+    color: #4b3b2f;
+}
+
+.service-modal-dialog .crop-close {
+    font-size: 18px;
+    line-height: 1;
+    color: #5d4b3c;
+}
+
+.service-modal-form {
+    margin-top: 14px;
+    gap: 8px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.service-modal-form label {
+    margin-top: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: #5d4c3f !important;
+}
+
+.service-modal-form input,
+.service-modal-form textarea,
+.service-modal-form select {
+    min-height: 44px;
+    border-radius: 12px;
+    border: 1px solid #d9c9b5 !important;
+    background: #ffffff !important;
+    color: #3f3228;
+}
+
+.service-modal-form textarea {
+    min-height: 120px;
+    resize: vertical;
+}
+
+.service-modal-form input:focus,
+.service-modal-form textarea:focus,
+.service-modal-form select:focus {
+    outline: none;
+    border-color: #b8956a !important;
+    box-shadow: 0 0 0 3px rgba(184, 149, 106, 0.2);
+}
+
+.service-modal-actions {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid #e7daca !important;
+}
+
+.service-modal-actions-right {
+    margin-left: auto;
+}
+
+@media (max-width: 760px) {
+    .service-modal-dialog {
+        width: min(96vw, 96vw);
+        max-height: 90svh;
+        padding: 14px;
+    }
+
+    .service-modal-actions {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+    }
+
+    .service-modal-actions-right {
+        width: 100%;
+        margin-left: 0;
+        justify-content: stretch;
+        flex-direction: column;
+    }
+
+    .service-modal-actions .btn,
+    .service-modal-actions-right .btn {
+        width: 100%;
+    }
+}
+
+@media (max-width: 760px) {
+    #about.section {
+        padding-bottom: 30px;
+    }
+
+    #service.section {
+        padding-top: 30px;
+        padding-bottom: 30px;
+    }
+
+    #contact.section {
+        padding-top: 30px;
+    }
+}
+
+/* Login + Error Pages Color Refinement */
+.login-main {
+    background: #fcf8f2 !important;
+}
+
+body:has(.login-main) {
+    min-height: 100svh;
+    display: flex;
+    flex-direction: column;
+}
+
+body:has(.login-main) .login-main {
+    min-height: 0 !important;
+    flex: 1 0 auto;
+}
+
+.login-page {
+    background: transparent !important;
+}
+
+.login-card {
+    background: #ffffff !important;
+    border: 1px solid #e7dbc9 !important;
+    box-shadow: 0 12px 28px rgba(82, 63, 46, 0.06) !important;
+}
+
+.login-brand .eyebrow {
+    color: #7a6757 !important;
+}
+
+.login-brand h1,
+.login-form label {
+    color: #4d3e32 !important;
+}
+
+.login-form input,
+.password-field-shell input {
+    background: #fffdfa !important;
+    border-color: #dccbb7 !important;
+    color: #3d3128 !important;
+}
+
+.login-form input:focus,
+.password-field-shell input:focus {
+    border-color: #b8956a !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, #f3e4cf 62%, #ffffff 38%) !important;
+}
+
+.login-card .btn {
+    background: #ffffff !important;
+    border-color: #1a1a1a !important;
+    color: #111111 !important;
+}
+
+.login-card .btn:hover,
+.login-card .btn:focus {
+    background: #f3f3f3 !important;
+    border-color: #000000 !important;
+    color: #000000 !important;
+}
+
+.login-card .forgot-link {
+    color: #3f342b !important;
+}
+
+.error-shell {
+    background: #fcf8f2 !important;
+}
+
+.error-card,
+.error-card-elegant,
+.error-card-minimal {
+    background: #ffffff !important;
+    border-color: #e8dccd !important;
+    box-shadow: 0 12px 28px rgba(82, 63, 46, 0.06) !important;
+}
+
+.error-brand,
+.error-code {
+    color: #5d4b3d !important;
+}
+
+.error-card h1 {
+    color: #46372d;
+}
+
+.error-text,
+.error-note {
+    color: #726255 !important;
+}
+
+.error-divider {
+    background: #d7c2a8 !important;
+}
+
+.error-card .btn {
+    background: #ffffff !important;
+    border-color: #1a1a1a !important;
+    color: #111111 !important;
+}
+
+.error-card .btn:hover,
+.error-card .btn:focus {
+    background: #f3f3f3 !important;
+    border-color: #000000 !important;
+    color: #000000 !important;
+}
+
+/* Forgot Password Layout Fix */
+body:has(.forgot-main) {
+    min-height: 100svh;
+    display: flex;
+    flex-direction: column;
+}
+
+body:has(.forgot-main) .forgot-main {
+    min-height: 0 !important;
+    flex: 1 0 auto;
+    background: #fcf8f2 !important;
+}
+
+body:has(.forgot-main) .forgot-main .login-page {
+    background: transparent !important;
+}
+
+/* Userdata Table Match Activity Log */
+.user-data-table-shell {
+    background: transparent !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+}
+
+.user-data-table,
+.admin-user-table.user-data-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    min-width: 760px !important;
+}
+
+.user-data-table th,
+.user-data-table td,
+.admin-user-table.user-data-table th,
+.admin-user-table.user-data-table td {
+    padding: 12px 14px !important;
+    border-bottom: 1px solid #eee8e3 !important;
+    text-align: left !important;
+    font-size: 14px !important;
+    background: transparent !important;
+    color: inherit !important;
+}
+
+.user-data-table th,
+.admin-user-table.user-data-table th {
+    background: color-mix(in srgb, var(--accent-soft) 20%, #ffffff 80%) !important;
+    color: #5a4b44 !important;
+    font-weight: 600 !important;
+}
+
+.user-data-table tbody tr:nth-child(even),
+.admin-user-table.user-data-table tbody tr:nth-child(even) {
+    background: #fcfaf8 !important;
+}
+
+.user-data-table tbody tr:hover,
+.admin-user-table.user-data-table tbody tr:hover {
+    background: color-mix(in srgb, var(--accent-soft) 20%, #ffffff 80%) !important;
+}
+
+/* Activity Log Color Balance */
+.activity-log-shell {
+    background: #fffdfa !important;
+    border: 1px solid #eadfce !important;
+    box-shadow: 0 10px 24px rgba(82, 63, 46, 0.05);
+}
+
+.activity-log-shell .section-head h1 {
+    color: #4a3b31;
+}
+
+.activity-log-shell .section-head p {
+    color: #6e5f53;
+}
+
+.activity-log-shell .activity-log-controls {
+    margin-bottom: 14px;
+}
+
+.activity-log-shell .admin-user-level-filter {
+    background: #fdf9f3 !important;
+    border-color: #e6d9c7 !important;
+}
+
+.activity-log-shell .admin-user-level-filter label {
+    color: #5b4c40 !important;
+}
+
+.activity-log-shell .admin-user-level-filter select {
+    background: #ffffff !important;
+    border-color: #deceba !important;
+    color: #4d3f34 !important;
+}
+
+.activity-log-shell .activity-detail-pre {
+    color: #5d5046;
+}
+
+/* Activity Log Table - Match /userdata */
+.activity-log-shell .user-data-table-shell,
+.activity-log-shell .admin-user-table-wrap.user-data-table-shell {
+    background: transparent !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    overflow: visible;
+    box-shadow: none !important;
+    padding: 0 !important;
+}
+
+.activity-log-shell .user-data-table,
+.activity-log-shell .admin-user-table.user-data-table {
+    min-width: 760px !important;
+    border-collapse: collapse !important;
+}
+
+.activity-log-shell .user-data-table thead th,
+.activity-log-shell .admin-user-table.user-data-table thead th {
+    background: color-mix(in srgb, var(--accent-soft) 20%, #ffffff 80%) !important;
+    color: #5a4b44 !important;
+    font-size: 14px !important;
+    letter-spacing: normal !important;
+    text-transform: none !important;
+    font-weight: 600 !important;
+    padding: 12px 14px !important;
+    border-bottom: 1px solid #eee8e3 !important;
+}
+
+.activity-log-shell .user-data-table tbody td,
+.activity-log-shell .admin-user-table.user-data-table tbody td {
+    background: transparent !important;
+    color: inherit !important;
+    font-size: 14px !important;
+    font-weight: 400;
+    padding: 12px 14px !important;
+    border-bottom: 1px solid #eee8e3 !important;
+}
+
+.activity-log-shell .user-data-table tbody tr:nth-child(even) td,
+.activity-log-shell .admin-user-table.user-data-table tbody tr:nth-child(even) td {
+    background: #fcfaf8 !important;
+}
+
+.activity-log-shell .user-data-table tbody tr:hover td,
+.activity-log-shell .admin-user-table.user-data-table tbody tr:hover td {
+    background: color-mix(in srgb, var(--accent-soft) 20%, #ffffff 80%) !important;
+}
+
+.activity-log-shell .activity-detail-pre {
+    font-size: 13px !important;
+    line-height: 1.5;
+}
+
+/* Permission Page Color Balance */
+.permission-shell {
+    background: #fffdfa !important;
+    border: 1px solid #eadfce !important;
+    box-shadow: 0 10px 24px rgba(82, 63, 46, 0.05);
+}
+
+.permission-shell .permission-head h1 {
+    color: #4a3b31;
+}
+
+.permission-shell .permission-head p {
+    color: #6e5f53;
+}
+
+.permission-shell .admin-user-table-wrap {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+.permission-shell .permission-table {
+    min-width: 760px;
+    border-collapse: collapse;
+}
+
+.permission-shell .permission-table th {
+    background: color-mix(in srgb, var(--accent-soft) 20%, #ffffff 80%) !important;
+    color: #5a4b44 !important;
+    border-bottom: 1px solid #eee8e3 !important;
+    font-weight: 600;
+}
+
+.permission-shell .permission-table td {
+    background: transparent !important;
+    color: #5d5046;
+    border-bottom: 1px solid #eee8e3 !important;
+}
+
+.permission-shell .permission-table tbody tr:nth-child(even) td {
+    background: #fcfaf8 !important;
+}
+
+.permission-shell .permission-table tbody tr:hover td {
+    background: color-mix(in srgb, var(--accent-soft) 20%, #ffffff 80%) !important;
+}
+
+.permission-shell .permission-table td strong {
+    color: #4c3e34;
+}
+
+.permission-shell .permission-switch input[type='checkbox'] {
+    accent-color: #b8956a;
+}
+
+.permission-shell .setting-actions .btn {
+    background: #ffffff !important;
+    border-color: #111111 !important;
+    color: #111111 !important;
+}
+
+.permission-shell .setting-actions .btn:hover,
+.permission-shell .setting-actions .btn:focus {
+    background: #f4f4f4 !important;
+    border-color: #000000 !important;
+    color: #000000 !important;
+}
+
+/* Account Page Color Balance */
+.account-page .setting-wrap {
+    background: #fffdfa !important;
+    border: 1px solid #eadfce !important;
+    box-shadow: 0 10px 24px rgba(82, 63, 46, 0.05) !important;
+}
+
+.account-hero h1 {
+    color: #4a3b31 !important;
+}
+
+.account-hero p {
+    color: #6e5f53 !important;
+}
+
+.account-page .setting-alert {
+    border-color: color-mix(in srgb, var(--champ-line) 76%, #d7bea0 24%) !important;
+    background: color-mix(in srgb, #fffaf2 76%, #f3e6d6 24%) !important;
+    color: #5f5044 !important;
+}
+
+.account-panel {
+    background: #ffffff !important;
+    border: 1px solid #e7dac9 !important;
+}
+
+.account-panel-title {
+    color: #4b3c31 !important;
+    border-bottom: 1px solid #ece0d1 !important;
+}
+
+.account-page .setting-form label {
+    color: #5d4f43 !important;
+}
+
+.account-page .setting-form input {
+    background: #ffffff !important;
+    border-color: #deceba !important;
+    color: #3f332a !important;
+}
+
+.account-page .setting-form input:focus {
+    border-color: #b8956a !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, #f4e5d1 62%, #ffffff 38%) !important;
+}
+
+.account-page .setting-form input[readonly] {
+    background: #fdf8f1 !important;
+    border-color: #e6d9c7 !important;
+    color: #77695d !important;
+}
+
+.account-page .password-visibility-btn {
+    background: #ffffff !important;
+    border-color: #deceba !important;
+}
+
+.account-page .password-visibility-btn:hover {
+    background: #f8efe3 !important;
+}
+
+.account-page .password-visibility-btn svg {
+    stroke: #6a5a4c !important;
+}
+
+.account-meta,
+.account-page [data-phone-otp-feedback] {
+    color: #6f6054 !important;
+}
+
+.account-actions .btn {
+    background: #ffffff !important;
+    border-color: #111111 !important;
+    color: #111111 !important;
+}
+
+.account-actions .btn:hover,
+.account-actions .btn:focus {
+    background: #f4f4f4 !important;
+    border-color: #000000 !important;
+    color: #000000 !important;
+}
+
+.account-otp-dialog,
+.crop-modal-dialog.account-email-notice-dialog {
+    background: #fffdfa !important;
+    border-color: #e8dccd !important;
+}
+
+.account-otp-subtitle,
+.account-email-notice-text,
+.account-otp-phone-info {
+    color: #65574b !important;
+}
+
+.account-otp-code-input {
+    background: #ffffff !important;
+    border-color: #deceba !important;
+    color: #3f332a !important;
+}
+
+.account-otp-code-input:focus {
+    border-color: #b8956a !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, #f4e5d1 62%, #ffffff 38%) !important;
+}
+
+/* Setting Page Color Balance */
+.setting-shell {
+    background: #fffdfa !important;
+    border: 1px solid #eadfce !important;
+    box-shadow: 0 10px 24px rgba(82, 63, 46, 0.05) !important;
+}
+
+.setting-shell .setting-head h1 {
+    color: #4a3b31 !important;
+}
+
+.setting-shell .setting-head p {
+    color: #6e5f53 !important;
+}
+
+.setting-shell .setting-alert {
+    border-color: color-mix(in srgb, var(--champ-line) 76%, #d7bea0 24%) !important;
+    background: color-mix(in srgb, #fffaf2 76%, #f3e6d6 24%) !important;
+    color: #5f5044 !important;
+}
+
+.setting-shell .setting-form label,
+.setting-shell .setting-label,
+.setting-shell .setting-toggle-row span:first-child {
+    color: #5d4f43 !important;
+}
+
+.setting-shell .setting-form input,
+.setting-shell .setting-form select {
+    background: #ffffff !important;
+    border-color: #deceba !important;
+    color: #3f332a !important;
+}
+
+.setting-shell .setting-form input:focus,
+.setting-shell .setting-form select:focus {
+    border-color: #b8956a !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, #f4e5d1 62%, #ffffff 38%) !important;
+}
+
+.setting-shell .setting-logo-box,
+.setting-shell .setting-bank-row {
+    background: #ffffff !important;
+    border-color: #e7dac9 !important;
+}
+
+.setting-shell .setting-toggle-slider {
+    background: #e7dccf !important;
+}
+
+.setting-shell .setting-toggle-input:checked + .setting-toggle-slider {
+    background: #b8956a !important;
+}
+
+.setting-shell .setting-actions .btn,
+.setting-shell [data-add-bank-row].btn,
+.setting-shell .setting-bank-remove.btn {
+    background: #ffffff !important;
+    border-color: #111111 !important;
+    color: #111111 !important;
+}
+
+.setting-shell .setting-actions .btn:hover,
+.setting-shell .setting-actions .btn:focus,
+.setting-shell [data-add-bank-row].btn:hover,
+.setting-shell [data-add-bank-row].btn:focus,
+.setting-shell .setting-bank-remove.btn:hover,
+.setting-shell .setting-bank-remove.btn:focus {
+    background: #f4f4f4 !important;
+    border-color: #000000 !important;
+    color: #000000 !important;
+}
+
+.setting-shell .crop-modal-dialog {
+    background: #fffdfa !important;
+    border-color: #e8dccd !important;
+}
+
+/* Activity Log Level Label Polish */
+.activity-log-shell .activity-log-controls {
+    margin-bottom: 14px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+}
+
+.activity-log-shell .admin-user-level-filter {
+    display: grid;
+    gap: 8px;
+    padding: 12px !important;
+    border: 1px solid #e6d9c7 !important;
+    border-radius: 12px !important;
+    background: #fdf9f3 !important;
+    max-width: 360px;
+}
+
+.activity-log-shell .admin-user-level-filter label {
+    margin: 0 !important;
+    font-size: 12px !important;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #6f6054 !important;
+    font-weight: 700 !important;
+}
+
+.activity-log-shell .admin-user-level-filter select {
+    min-height: 44px !important;
+    border-radius: 10px !important;
+    border: 1px solid #deceba !important;
+    background: #ffffff !important;
+    color: #3f332a !important;
+}
+
+.activity-log-shell .admin-user-level-filter select:focus {
+    border-color: #b8956a !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, #f4e5d1 62%, #ffffff 38%) !important;
+}
+
+.activity-log-shell .user-data-table-shell,
+.activity-log-shell .admin-user-table-wrap.user-data-table-shell {
+    background: #ffffff !important;
+    border: 1px solid #e7dac9 !important;
+    border-radius: 12px !important;
+    overflow: hidden;
+}
+
+.activity-log-shell .admin-user-pagination-meta,
+.activity-log-shell .admin-user-pagination-page {
+    color: #6a5a4d !important;
+}
+
+.activity-log-shell .admin-user-pagination-actions .btn {
+    background: #ffffff !important;
+    border-color: #111111 !important;
+    color: #111111 !important;
+}
+
+.activity-log-shell .admin-user-pagination-actions .btn:hover,
+.activity-log-shell .admin-user-pagination-actions .btn:focus {
+    background: #f4f4f4 !important;
+    border-color: #000000 !important;
+    color: #000000 !important;
+}
+
+/* Activity Log Layout Refresh */
+.activity-log-shell {
+    border-radius: 22px !important;
+    padding: clamp(18px, 2.2vw, 28px) !important;
+}
+
+.activity-log-shell .section-head {
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #ece2d6;
+}
+
+.activity-log-shell .section-head h1 {
+    margin: 0;
+    font-size: clamp(28px, 2.7vw, 36px);
+    letter-spacing: -0.02em;
+}
+
+.activity-log-shell .section-head p {
+    margin: 6px 0 0;
+}
+
+.activity-log-shell .activity-log-controls {
+    margin-bottom: 14px !important;
+    grid-template-columns: 1fr !important;
+}
+
+.activity-log-shell .activity-log-level-filter,
+.activity-log-shell .admin-user-level-filter {
+    max-width: 320px;
+}
+
+.activity-log-shell .activity-log-table th,
+.activity-log-shell .activity-log-table td {
+    vertical-align: top;
+}
+
+.activity-log-shell .activity-log-action {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid #e8d9c8;
+    background: #fdf7ef;
+    color: #5a4a3d;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.activity-log-shell .activity-log-datetime {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    color: #5f5248;
+}
+
+.activity-log-shell .activity-detail-pre {
+    margin: 0;
+    max-width: 420px;
+    max-height: 112px;
+    overflow: auto;
+    padding: 8px 10px;
+    border: 1px solid #eadfce;
+    border-radius: 10px;
+    background: #fffaf4;
+    color: #5d5046;
+}
+
+.activity-log-shell .activity-log-empty td {
+    padding: 24px 16px !important;
+    text-align: center;
+    color: #76685c !important;
+}
+
+@media (max-width: 768px) {
+    .activity-log-shell {
+        border-radius: 16px !important;
+        padding: 16px !important;
+    }
+
+    .activity-log-shell .activity-log-level-filter,
+    .activity-log-shell .admin-user-level-filter {
+        max-width: 100%;
+    }
+
+    .activity-log-shell .activity-detail-pre {
+        max-width: 280px;
+    }
+}
+
+/* Userdata Search + Level Card Polish */
+.user-data-controls {
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    gap: 12px !important;
+}
+
+.user-data-controls .admin-user-search-box,
+.user-data-controls .admin-user-level-filter {
+    display: grid;
+    gap: 8px;
+    padding: 12px !important;
+    border: 1px solid #e6d9c7 !important;
+    border-radius: 12px !important;
+    background: #fdf9f3 !important;
+}
+
+.user-data-controls .admin-user-search-box label,
+.user-data-controls .admin-user-level-filter label {
+    margin: 0 !important;
+    font-size: 12px !important;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #6f6054 !important;
+    font-weight: 700 !important;
+}
+
+.user-data-controls .admin-user-search-box input,
+.user-data-controls .admin-user-level-filter select {
+    min-height: 44px !important;
+    border-radius: 10px !important;
+    border: 1px solid #deceba !important;
+    background: #ffffff !important;
+    color: #3f332a !important;
+}
+
+.user-data-controls .admin-user-search-box input:focus,
+.user-data-controls .admin-user-level-filter select:focus {
+    border-color: #b8956a !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, #f4e5d1 62%, #ffffff 38%) !important;
+}
+
+/* Booking Page Color Balance */
+.booking-page {
+    background: #f5ede2 !important;
+}
+
+.booking-page .booking-wrap {
+    background: #fffdfa !important;
+    border: 1px solid #e9ddcc !important;
+    box-shadow: 0 12px 28px rgba(82, 63, 46, 0.06) !important;
+}
+
+.booking-page h1 {
+    color: #4a3b31;
+}
+
+.booking-page .booking-package-meta,
+.booking-page p,
+.booking-page .service-meta {
+    color: #6e5f53;
+}
+
+.booking-page .package-detail-box,
+.booking-page .payment-box {
+    background: #fff8ef !important;
+    border: 1px solid #e7d9c7 !important;
+}
+
+.booking-page .package-detail-box h2,
+.booking-page .payment-box h2 {
+    color: #4d3e33;
+}
+
+.booking-page .package-detail-box li,
+.booking-page .payment-box li {
+    color: #594b3f;
+}
+
+.booking-page .booking-form {
+    background: #fffdf9 !important;
+    border: 1px solid #e8dccb !important;
+}
+
+.booking-page .booking-form label {
+    color: #5d4f43 !important;
+}
+
+.booking-page .booking-form input,
+.booking-page .booking-form select {
+    background: #ffffff !important;
+    border-color: #deceba !important;
+    color: #3f332a !important;
+}
+
+.booking-page .booking-form input[type='file'] {
+    background: #fffdfa !important;
+}
+
+.booking-page .booking-form input:focus,
+.booking-page .booking-form select:focus,
+.booking-page .booking-date-input:focus,
+.booking-page .booking-time-select:focus {
+    border-color: #b8956a !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, #f4e5d1 62%, #ffffff 38%) !important;
+}
+
+.booking-page .booking-field-shell::after {
+    border-right-color: #8e7356 !important;
+    border-bottom-color: #8e7356 !important;
+}
+
+.booking-page .booking-form > .btn {
+    background: #ffffff !important;
+    border-color: #111111 !important;
+    color: #111111 !important;
+}
+
+.booking-page .booking-form > .btn:hover,
+.booking-page .booking-form > .btn:focus {
+    background: #f4f4f4 !important;
+    border-color: #000000 !important;
+    color: #000000 !important;
+}
+
+.booking-page .form-message.success {
+    color: #5c4d3e !important;
+}
+
+.booking-page .form-message.error {
+    color: #7a4f39 !important;
+}
+
+.booking-success-modal .crop-modal-dialog.booking-success-dialog,
+.booking-confirm-modal .crop-modal-dialog.booking-confirm-dialog,
+.booking-crop-modal .crop-modal-dialog.booking-crop-dialog {
+    background: #fffdfa !important;
+    border-color: #e8dccd !important;
+}
+
+.booking-confirm-list {
+    background: #fff8ef !important;
+    border-color: #e7d9c7 !important;
+}
+
+.booking-confirm-list span {
+    color: #75665a !important;
+}
+
+.booking-confirm-list strong {
+    color: #3f332a !important;
+}
+
+/* Home Page Color Balance */
+#home.hero .hero-carousel {
+    border: 1px solid #e7d9c7;
+    border-radius: 18px;
+    box-shadow: 0 12px 28px rgba(82, 63, 46, 0.06);
+}
+
+#home .slide-stack-card {
+    background: rgba(255, 253, 249, 0.92);
+    border: 1px solid #e8dbca;
+}
+
+#home .slide-stack-card h2 {
+    color: #4a3b31;
+}
+
+#home .slide-stack-card p,
+#home .slide-stack-card .eyebrow {
+    color: #6e5f53;
+}
+
+#home .carousel-btn {
+    background: rgba(255, 253, 249, 0.95);
+    border: 1px solid #e3d4c2;
+    color: #5b4b3d;
+}
+
+#home .carousel-btn:hover {
+    background: #f8efe3;
+}
+
+#home .dot {
+    background: #d9c4a5;
+}
+
+#home .dot.is-active {
+    background: #b8956a;
+}
+
+#about.section,
+#service.section,
+#contact.section {
+    background: transparent !important;
+}
+
+#about .split,
+#contact .contact-box {
+    background: #fffdfa !important;
+    border: 1px solid #eadfce !important;
+    box-shadow: 0 10px 24px rgba(82, 63, 46, 0.05);
+    border-radius: 18px;
+    padding: 28px;
+}
+
+#about h2,
+#service .section-head h2,
+#contact h2 {
+    color: #4a3b31;
+}
+
+#about p,
+#contact p,
+#contact .contact-list p {
+    color: #6e5f53;
+}
+
+#contact .contact-list a {
+    color: #5c4d3e;
+}
+
+#service .service-card {
+    background: #fffdfa !important;
+    border: 1px solid #e7dac9 !important;
+    box-shadow: 0 8px 20px rgba(82, 63, 46, 0.05);
+    transition: none !important;
+}
+
+#service .service-card:hover {
+    background: #fffdfa !important;
+    border-color: #e7dac9 !important;
+    box-shadow: 0 8px 20px rgba(82, 63, 46, 0.05) !important;
+    transform: none !important;
+}
+
+#service .service-card h3,
+#service .service-price {
+    color: #4d3e33;
+}
+
+#service .service-card p,
+#service .service-card li,
+#service .service-meta {
+    color: #6d5f53;
+}
+
+#service .service-card .btn,
+#service .booking-status-box .btn {
+    background: #ffffff !important;
+    border-color: #111111 !important;
+    color: #111111 !important;
+}
+
+#service .service-card .btn:hover,
+#service .service-card .btn:focus,
+#service .booking-status-box .btn:hover,
+#service .booking-status-box .btn:focus {
+    background: #f4f4f4 !important;
+    border-color: #000000 !important;
+    color: #000000 !important;
+}
+
+#service .booking-status-box {
+    background: #fffdfa !important;
+    border: 1px solid #eadfce !important;
+    box-shadow: 0 10px 24px rgba(82, 63, 46, 0.05);
+}
+
+#service .booking-status-head h3 {
+    color: #4d3f34;
+}
+
+#service .booking-status-head p,
+#service .booking-status-label {
+    color: #6f6054;
+}
+
+#service .booking-status-input {
+    background: #ffffff !important;
+    border-color: #deceba !important;
+    color: #3f332a !important;
+}
+
+#service .booking-status-input:focus {
+    border-color: #b8956a !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, #f4e5d1 62%, #ffffff 38%) !important;
+}
+
+#service .booking-status-result {
+    background: #fff8ef !important;
+    border-color: #e7d9c7 !important;
+}
+
+#service .booking-status-result span {
+    color: #75665a !important;
+}
+
+#service .booking-status-result strong {
+    color: #3f332a !important;
+}
+
+.booking-verify-dialog {
+    background: #fffdfa !important;
+    border-color: #e8dccd !important;
+}
+
+/* Payment popup must stay flat (no gradient) */
+.payment-popup-modal .crop-modal-dialog.payment-popup-dialog,
+.payment-popup-modal.is-error .crop-modal-dialog.payment-popup-dialog {
+    background: #ffffff !important;
+    background-image: none !important;
+}
+
+.payment-popup-modal .payment-popup-actions {
+    display: flex !important;
+    justify-content: center !important;
+    width: 100%;
+}
+
+.payment-popup-modal .payment-popup-actions .btn {
+    margin: 0 auto !important;
+}
+
+/* Login popup must stay flat (no gradient) */
+.login-popup-modal .crop-modal-dialog.login-popup-dialog {
+    background: #ffffff !important;
+    background-image: none !important;
+}
+
+/* Home editor modals: match /service modal style */
+.carousel-editor-dialog,
+.about-editor-dialog,
+.contact-editor-dialog {
+    border-radius: 18px;
+    border: 1px solid color-mix(in srgb, var(--accent-soft) 44%, #d8d2cd 56%);
+    box-shadow: 0 22px 44px rgba(24, 16, 12, 0.16);
+    background: #fffdfa !important;
+    background-image: none !important;
+}
+
+.carousel-editor-dialog .crop-modal-head,
+.about-editor-dialog .crop-modal-head,
+.contact-editor-dialog .crop-modal-head {
+    margin-bottom: 0;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #e7daca;
+}
+
+.carousel-editor-dialog .crop-modal-head h2,
+.about-editor-dialog .crop-modal-head h2,
+.contact-editor-dialog .crop-modal-head h2 {
+    font-size: clamp(20px, 2.3vw, 24px);
+    color: #4b3b2f;
+}
+
+.carousel-editor-dialog .crop-close,
+.about-editor-dialog .crop-close,
+.contact-editor-dialog .crop-close {
+    font-size: 18px;
+    line-height: 1;
+    color: #5d4b3c;
+}
+
+.carousel-editor-modal .service-modal-form {
+    margin-top: 14px;
+    gap: 8px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.carousel-editor-modal .service-modal-form label {
+    margin-top: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: #5d4c3f !important;
+}
+
+.carousel-editor-modal .service-modal-form input,
+.carousel-editor-modal .service-modal-form textarea,
+.carousel-editor-modal .service-modal-form select {
+    min-height: 44px;
+    border-radius: 12px;
+    border: 1px solid #d9c9b5 !important;
+    background: #ffffff !important;
+    color: #3f3228;
+}
+
+.carousel-editor-modal .service-modal-form textarea {
+    min-height: 120px;
+    resize: vertical;
+}
+
+.carousel-editor-modal .service-modal-form input:focus,
+.carousel-editor-modal .service-modal-form textarea:focus,
+.carousel-editor-modal .service-modal-form select:focus {
+    outline: none;
+    border-color: #b8956a !important;
+    box-shadow: 0 0 0 3px rgba(184, 149, 106, 0.2);
+}
+
+.carousel-editor-modal .service-modal-actions,
+.about-editor-modal .service-modal-actions,
+.contact-editor-modal .service-modal-actions {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid #e7daca !important;
 }

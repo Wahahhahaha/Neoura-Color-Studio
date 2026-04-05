@@ -1,4 +1,4 @@
-<main>
+<main class="forgot-main">
     <section class="section login-page">
         <div class="container">
             <div class="login-card fade-in fade-in-soft">
@@ -16,15 +16,19 @@
                     <p class="service-meta">{{ __('ui.forgot.phone.description') }}</p>
                 @endif
 
+                <div class="login-alert" data-forgot-phone-feedback role="alert" hidden></div>
                 @if ($errors->any())
                     <div class="login-alert" role="alert">{{ $errors->first() }}</div>
+                @endif
+                @if (session('forgot_popup_error'))
+                    <div class="login-alert" role="alert">{{ session('forgot_popup_error') }}</div>
                 @endif
                 @if (session('status'))
                     <div class="login-alert success" role="status">{{ session('status') }}</div>
                 @endif
 
                 @if (empty($showOtpForm))
-                    <form class="login-form" method="post" action="{{ route('password.forgot.phone.send_otp') }}" novalidate>
+                    <form class="login-form" method="post" action="{{ route('password.forgot.phone.send_otp') }}" novalidate data-forgot-phone-send-form>
                         @csrf
 
                         <label for="forgot_phone">{{ __('ui.forgot.phone.registered_phone') }}</label>
@@ -36,7 +40,7 @@
                         </div>
                     </form>
                 @else
-                    <form class="login-form" method="post" action="{{ route('password.forgot.phone.verify_otp') }}" novalidate>
+                    <form class="login-form" method="post" action="{{ route('password.forgot.phone.verify_otp') }}" novalidate data-forgot-phone-verify-form>
                         @csrf
 
                         <label for="otp_code">{{ __('ui.forgot.phone.otp_code') }}</label>
@@ -54,22 +58,4 @@
             </div>
         </div>
     </section>
-
-    @php
-        $forgotPopupMessage = (string) session('forgot_popup_error', '');
-    @endphp
-    <div
-        class="crop-modal forgot-popup-modal"
-        data-forgot-popup-modal
-        data-popup-message="{{ e($forgotPopupMessage) }}"
-        hidden
-    >
-        <div class="crop-modal-backdrop" data-close-forgot-popup></div>
-        <div class="crop-modal-dialog forgot-popup-dialog" role="dialog" aria-modal="true" aria-label="{{ __('ui.forgot.common.notice_aria') }}">
-            <p class="account-email-notice-text" data-forgot-popup-text></p>
-            <div class="crop-actions account-email-notice-footer">
-                <button type="button" class="btn" data-close-forgot-popup>{{ __('ui.forgot.common.ok') }}</button>
-            </div>
-        </div>
-    </div>
 </main>

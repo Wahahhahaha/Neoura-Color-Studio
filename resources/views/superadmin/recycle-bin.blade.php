@@ -2,8 +2,8 @@
     <div class="container">
         <div class="setting-wrap">
             <div class="section-head">
-                <p class="eyebrow">{{ __('ui.superadmin.recycle_bin.eyebrow') }}</p>
-                <h1>{{ __('ui.superadmin.recycle_bin.title') }}</h1>
+<!--                 <p class="eyebrow">{{ __('ui.superadmin.recycle_bin.eyebrow') }}</p>
+ -->                <h1>{{ __('ui.superadmin.recycle_bin.title') }}</h1>
                 <p>{{ __('ui.superadmin.recycle_bin.description') }}</p>
             </div>
 

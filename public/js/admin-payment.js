@@ -1,4 +1,89 @@
 (() => {
+    const popupModal = document.querySelector('[data-payment-popup-modal]');
+    const popupText = popupModal?.querySelector('[data-payment-popup-text]') || null;
+    const popupTitle = popupModal?.querySelector('[data-payment-popup-title]') || null;
+    const popupIconGlyph = popupModal?.querySelector('[data-payment-popup-icon-glyph]') || null;
+    const popupCloseNodes = popupModal ? Array.from(popupModal.querySelectorAll('[data-close-payment-popup]')) : [];
+    const popupMessage = (popupModal?.getAttribute('data-popup-message') || '').trim();
+    const popupType = (popupModal?.getAttribute('data-popup-type') || 'success').toLowerCase() === 'error' ? 'error' : 'success';
+    const popupTitleSuccess = popupModal?.getAttribute('data-popup-title-success') || 'Payment Updated';
+    const popupTitleError = popupModal?.getAttribute('data-popup-title-error') || 'Update Failed';
+    const popupIconOk = popupModal?.getAttribute('data-popup-icon-ok') || 'OK';
+    let popupCloseTimer = null;
+
+    const syncBodyScrollLock = () => {
+        const hasOpenModal = Boolean(document.querySelector('.crop-modal:not([hidden])'));
+        document.body.style.overflow = hasOpenModal ? 'hidden' : '';
+    };
+
+    const closePopup = () => {
+        if (!popupModal || popupModal.hidden) {
+            return;
+        }
+
+        popupModal.classList.remove('is-enter');
+        popupModal.classList.add('is-leave');
+
+        if (popupCloseTimer) {
+            window.clearTimeout(popupCloseTimer);
+        }
+
+        popupCloseTimer = window.setTimeout(() => {
+            popupModal.hidden = true;
+            popupModal.classList.remove('is-leave');
+            syncBodyScrollLock();
+            popupCloseTimer = null;
+        }, 280);
+    };
+
+    const openPopup = (text, type) => {
+        if (!popupModal || !text) {
+            return;
+        }
+
+        if (popupCloseTimer) {
+            window.clearTimeout(popupCloseTimer);
+            popupCloseTimer = null;
+        }
+        if (popupText) {
+            popupText.textContent = text;
+        }
+        if (popupTitle) {
+            popupTitle.textContent = type === 'error' ? popupTitleError : popupTitleSuccess;
+        }
+        if (popupIconGlyph) {
+            popupIconGlyph.textContent = popupIconOk;
+        }
+
+        popupModal.classList.toggle('is-error', type === 'error');
+        popupModal.classList.toggle('is-success', type !== 'error');
+        popupModal.hidden = false;
+        popupModal.classList.remove('is-leave');
+        popupModal.classList.remove('is-enter');
+        window.requestAnimationFrame(() => popupModal.classList.add('is-enter'));
+        syncBodyScrollLock();
+    };
+
+    const clearPopupQueryParams = () => {
+        const url = new URL(window.location.href);
+        let changed = false;
+        ['popup_message', 'popup_type'].forEach((key) => {
+            if (url.searchParams.has(key)) {
+                url.searchParams.delete(key);
+                changed = true;
+            }
+        });
+        if (changed) {
+            window.history.replaceState({}, '', url.toString());
+        }
+    };
+
+    popupCloseNodes.forEach((node) => node.addEventListener('click', closePopup));
+    if (popupMessage) {
+        openPopup(popupMessage, popupType);
+        clearPopupQueryParams();
+    }
+
     const filter = document.querySelector('[data-payment-bank-filter]');
     const statusFilterWrap = document.querySelector('[data-payment-status-filter]');
     const listRoot = document.querySelector('[data-payment-list-root]');

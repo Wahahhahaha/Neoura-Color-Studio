@@ -38,6 +38,7 @@
         ? Array.from(emailNoticeModal.querySelectorAll('[data-close-account-email-notice]'))
         : [];
     let emailNoticeCloseTimer = null;
+    let otpCloseTimer = null;
 
     const syncBodyScrollLock = () => {
         const hasOpenModal = Boolean(document.querySelector('.crop-modal:not([hidden])'));
@@ -124,6 +125,10 @@
         if (!otpModal) {
             return;
         }
+        if (otpCloseTimer) {
+            window.clearTimeout(otpCloseTimer);
+            otpCloseTimer = null;
+        }
         if (otpInput) {
             otpInput.value = '';
         }
@@ -131,6 +136,7 @@
             otpPhoneInfo.textContent = `${text('otp-sent-to', 'OTP has been sent to')} ${phone}.`;
         }
         otpModal.hidden = false;
+        otpModal.classList.remove('is-leave');
         otpModal.classList.remove('is-enter');
         window.requestAnimationFrame(() => otpModal.classList.add('is-enter'));
         document.body.style.overflow = 'hidden';
@@ -141,10 +147,18 @@
         if (!otpModal) {
             return;
         }
-        otpModal.hidden = true;
         otpModal.classList.remove('is-enter');
-        syncBodyScrollLock();
-        clearOtpError();
+        otpModal.classList.add('is-leave');
+        if (otpCloseTimer) {
+            window.clearTimeout(otpCloseTimer);
+        }
+        otpCloseTimer = window.setTimeout(() => {
+            otpModal.hidden = true;
+            otpModal.classList.remove('is-leave');
+            syncBodyScrollLock();
+            clearOtpError();
+            otpCloseTimer = null;
+        }, 240);
     };
 
     const openEmailNoticeModal = (message) => {

@@ -1,10 +1,9 @@
 <section class="section">
     <div class="container">
-        <div class="setting-wrap">
-            <div class="section-head">
-                <p class="eyebrow">Superadmin</p>
-                <h1>Website Setting</h1>
-                <p>Edit profil website dan data bank. Perubahan akan langsung muncul di website.</p>
+        <div class="setting-wrap setting-shell">
+            <div class="section-head setting-head">
+                <h1>{{ __('ui.superadmin.setting.title') }}</h1>
+                <p>{{ __('ui.superadmin.setting.description') }}</p>
             </div>
 
             @if (session('status'))
@@ -19,14 +18,14 @@
                 @csrf
 
                 <div class="setting-logo-box">
-                    <p class="setting-label">Current Logo</p>
-                    <img src="{{ $website['logo_url'] ?? asset('images/neora-logo.svg') }}" alt="Website logo" class="setting-logo-preview">
+                    <p class="setting-label">{{ __('ui.superadmin.setting.current_logo') }}</p>
+                    <img src="{{ $website['logo_url'] ?? asset('images/neora-logo.svg') }}" alt="{{ __('ui.superadmin.setting.website_logo_alt') }}" class="setting-logo-preview">
                 </div>
 
-                <label for="systemlogo">Website Logo</label>
+                <label for="systemlogo">{{ __('ui.superadmin.setting.website_logo') }}</label>
                 <input type="file" id="systemlogo" name="systemlogo" accept="image/*">
 
-                <label for="systemname">Website Name</label>
+                <label for="systemname">{{ __('ui.superadmin.setting.website_name') }}</label>
                 <input type="text" id="systemname" name="systemname" value="{{ old('systemname', $website['name'] ?? '') }}" required>
 
                 @php
@@ -38,7 +37,7 @@
                     }
                 @endphp
                 <label class="setting-toggle-row" for="website_name_visibility_toggle">
-                    <span>Website Name Visibility (Menu & Navbar)</span>
+                    <span>{{ __('ui.superadmin.setting.website_name_visibility') }}</span>
                     <span class="setting-toggle-wrap">
                         <input type="hidden" name="website_name_visibility_toggle" value="0">
                         <input
@@ -53,41 +52,30 @@
                     </span>
                 </label>
 
-                <div class="setting-theme-grid">
-                    <div>
-                        <label for="system_theme_color_soft">Theme Color Soft</label>
-                        <input type="color" id="system_theme_color_soft" name="system_theme_color_soft" value="{{ old('system_theme_color_soft', $website['theme_color_soft'] ?? '#F2D5C4') }}">
-                    </div>
-                    <div>
-                        <label for="system_theme_color_bold">Theme Color Bold</label>
-                        <input type="color" id="system_theme_color_bold" name="system_theme_color_bold" value="{{ old('system_theme_color_bold', $website['theme_color_bold'] ?? '#C69278') }}">
-                    </div>
-                </div>
-
-                <label for="systemcontact">Phone Number</label>
+                <label for="systemcontact">{{ __('ui.superadmin.setting.phone_number') }}</label>
                 <input type="text" id="systemcontact" name="systemcontact" value="{{ old('systemcontact', $website['phone'] ?? '') }}">
 
                 <label for="system_insta">Instagram</label>
                 <input type="text" id="system_insta" name="system_insta" value="{{ old('system_insta', $website['instagram'] ?? '') }}">
 
-                <label for="systemaddress">Address</label>
+                <label for="systemaddress">{{ __('ui.superadmin.setting.address') }}</label>
                 <input type="text" id="systemaddress" name="systemaddress" value="{{ old('systemaddress', $website['address'] ?? '') }}">
 
                 <div class="setting-theme-grid">
                     <div>
-                        <label for="operational_open">Operational Start</label>
+                        <label for="operational_open">{{ __('ui.superadmin.setting.operational_start') }}</label>
                         <input type="time" id="operational_open" name="operational_open" value="{{ old('operational_open', $website['operational_open'] ?? '10:00') }}" required>
                     </div>
                     <div>
-                        <label for="operational_close">Operational End</label>
+                        <label for="operational_close">{{ __('ui.superadmin.setting.operational_end') }}</label>
                         <input type="time" id="operational_close" name="operational_close" value="{{ old('operational_close', $website['operational_close'] ?? '22:00') }}" required>
                     </div>
                 </div>
 
                 <div class="setting-bank-block">
                     <div class="setting-bank-head">
-                        <p class="setting-label">Bank Accounts</p>
-                        <button type="button" class="btn btn-outline" data-add-bank-row>Add Bank</button>
+                        <p class="setting-label">{{ __('ui.superadmin.setting.bank_accounts') }}</p>
+                        <button type="button" class="btn btn-outline" data-add-bank-row>{{ __('ui.superadmin.setting.add_bank') }}</button>
                     </div>
 
                     <div class="setting-bank-list" data-bank-list>
@@ -116,21 +104,21 @@
                         @foreach ($renderRows as $row)
                             <div class="setting-bank-row" data-bank-row>
                                 <div>
-                                    <label>Bank Name</label>
+                                    <label>{{ __('ui.superadmin.setting.bank_name') }}</label>
                                     <input type="text" name="bankname[]" value="{{ $row['bankname'] ?? '' }}">
                                 </div>
                                 <div>
-                                    <label>Bank Number</label>
+                                    <label>{{ __('ui.superadmin.setting.bank_number') }}</label>
                                     <input type="text" name="banknumber[]" value="{{ $row['banknumber'] ?? '' }}">
                                 </div>
-                                <button type="button" class="btn btn-outline setting-bank-remove" data-remove-bank-row>Remove</button>
+                                <button type="button" class="btn btn-outline setting-bank-remove" data-remove-bank-row>{{ __('ui.superadmin.setting.remove') }}</button>
                             </div>
                         @endforeach
                     </div>
                 </div>
 
                 <div class="setting-actions">
-                    <button type="submit" class="btn">Save Setting</button>
+                    <button type="submit" class="btn">{{ __('ui.superadmin.setting.save_setting') }}</button>
                 </div>
             </form>
         </div>
@@ -142,28 +130,28 @@
 <template data-bank-row-template>
     <div class="setting-bank-row" data-bank-row>
         <div>
-            <label>Bank Name</label>
+            <label>{{ __('ui.superadmin.setting.bank_name') }}</label>
             <input type="text" name="bankname[]">
         </div>
         <div>
-            <label>Bank Number</label>
+            <label>{{ __('ui.superadmin.setting.bank_number') }}</label>
             <input type="text" name="banknumber[]">
         </div>
-        <button type="button" class="btn btn-outline setting-bank-remove" data-remove-bank-row>Remove</button>
+        <button type="button" class="btn btn-outline setting-bank-remove" data-remove-bank-row>{{ __('ui.superadmin.setting.remove') }}</button>
     </div>
 </template>
 
 <div class="crop-modal" data-crop-modal hidden>
     <div class="crop-modal-backdrop" data-close-crop-modal></div>
-    <div class="crop-modal-dialog" role="dialog" aria-modal="true" aria-label="Crop logo">
+    <div class="crop-modal-dialog" role="dialog" aria-modal="true" aria-label="{{ __('ui.superadmin.setting.crop_logo_aria') }}">
         <div class="crop-modal-head">
-            <h2>Preview & Crop Logo</h2>
-            <button type="button" class="crop-close" data-close-crop-modal aria-label="Close crop modal">x</button>
+            <h2>{{ __('ui.superadmin.setting.crop_logo_title') }}</h2>
+            <button type="button" class="crop-close" data-close-crop-modal aria-label="{{ __('ui.superadmin.setting.close_crop_modal') }}">x</button>
         </div>
 
         <div class="crop-stage-wrap">
             <div class="crop-stage" data-crop-stage>
-                <img src="" alt="Logo preview" data-crop-image>
+                <img src="" alt="{{ __('ui.superadmin.setting.logo_preview_alt') }}" data-crop-image>
                 <div class="crop-box" data-crop-box>
                     <span class="crop-handle crop-handle-nw" data-crop-handle="nw" aria-hidden="true"></span>
                     <span class="crop-handle crop-handle-ne" data-crop-handle="ne" aria-hidden="true"></span>
@@ -174,13 +162,13 @@
         </div>
 
         <div class="crop-controls">
-            <label for="cropZoom">Zoom</label>
+            <label for="cropZoom">{{ __('ui.superadmin.setting.zoom') }}</label>
             <input type="range" id="cropZoom" min="1" max="3" step="0.01" value="1" data-crop-zoom>
         </div>
 
         <div class="crop-actions">
-            <button type="button" class="btn btn-outline" data-close-crop-modal>Cancel</button>
-            <button type="button" class="btn" data-apply-crop>Apply Crop</button>
+            <button type="button" class="btn btn-outline" data-close-crop-modal>{{ __('ui.common.cancel') }}</button>
+            <button type="button" class="btn" data-apply-crop>{{ __('ui.superadmin.setting.apply_crop') }}</button>
         </div>
     </div>
 </div>

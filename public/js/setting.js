@@ -22,6 +22,7 @@
     let offsetX = 0;
     let offsetY = 0;
     let action = null;
+    let closeTimer = null;
     let crop = {
         x: 0,
         y: 0,
@@ -106,15 +107,31 @@
     };
 
     const openModal = () => {
+        if (closeTimer) {
+            window.clearTimeout(closeTimer);
+            closeTimer = null;
+        }
         modal.hidden = false;
+        modal.classList.remove('is-leave');
+        modal.classList.remove('is-enter');
+        window.requestAnimationFrame(() => modal.classList.add('is-enter'));
         document.body.style.overflow = 'hidden';
     };
 
     const closeModal = () => {
-        modal.hidden = true;
-        document.body.style.overflow = '';
-        action = null;
-        stage.classList.remove('is-dragging');
+        modal.classList.remove('is-enter');
+        modal.classList.add('is-leave');
+        if (closeTimer) {
+            window.clearTimeout(closeTimer);
+        }
+        closeTimer = window.setTimeout(() => {
+            modal.hidden = true;
+            modal.classList.remove('is-leave');
+            document.body.style.overflow = '';
+            action = null;
+            stage.classList.remove('is-dragging');
+            closeTimer = null;
+        }, 240);
     };
 
     const loadSelectedFile = () => {

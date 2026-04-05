@@ -4,9 +4,9 @@
             type="button"
             class="admin-top-sidebar-toggle admin-top-sidebar-toggle--column"
             data-admin-sidebar-toggle
-            aria-label="Toggle sidebar"
+            aria-label="{{ __('ui.nav.toggle_sidebar') }}"
             aria-expanded="true"
-            title="Toggle sidebar"
+            title="{{ __('ui.nav.toggle_sidebar') }}"
         >
             <span></span><span></span><span></span>
         </button>

@@ -6,8 +6,8 @@
         <div class="setting-wrap service-page-shell">
             <div class="section-head admin-service-hero">
                 <div class="admin-service-hero-copy">
-                    <p class="eyebrow">{{ __('ui.admin.service.eyebrow') }}</p>
-                    <h1>{{ __('ui.admin.service.title') }}</h1>
+<!--                     <p class="eyebrow">{{ __('ui.admin.service.eyebrow') }}</p>
+ -->                    <h1>{{ __('ui.admin.service.title') }}</h1>
                     <p>{{ __('ui.admin.service.description') }}</p>
                 </div>
                 <div class="admin-service-hero-actions">

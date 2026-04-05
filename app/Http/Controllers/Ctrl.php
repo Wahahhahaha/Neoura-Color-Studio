@@ -282,6 +282,7 @@ class Ctrl extends Controller
 
     private function sidebarServices(): array
     {
+        $activeLocale = strtolower(trim((string) app()->getLocale()));
         $services = DB::connection('mysql')
             ->table('neoura.service')
             ->select('serviceid', 'name')
@@ -299,7 +300,7 @@ class Ctrl extends Controller
             ->get()
             ->groupBy('serviceid');
 
-        return $services->map(function ($service) use ($descriptionRows) {
+        return $services->map(function ($service) use ($descriptionRows, $activeLocale) {
             $descriptions = $descriptionRows
                 ->get($service->serviceid, collect())
                 ->pluck('name')
@@ -308,9 +309,19 @@ class Ctrl extends Controller
                 ->values()
                 ->all();
 
+            $localized = $this->serviceLocalizedContentById((int) $service->serviceid, $activeLocale);
+            $name = trim((string) ($localized['name'] ?? ''));
+            if ($name === '') {
+                $name = trim((string) $service->name);
+            }
+            $localizedDescriptions = is_array($localized['descriptions'] ?? null) ? $localized['descriptions'] : [];
+            if (!empty($localizedDescriptions)) {
+                $descriptions = $localizedDescriptions;
+            }
+
             return [
                 'serviceid' => (int) $service->serviceid,
-                'name' => trim((string) $service->name),
+                'name' => $name,
                 'descriptions' => $descriptions,
             ];
         })->all();
@@ -318,6 +329,7 @@ class Ctrl extends Controller
 
     private function servicePageRows(): array
     {
+        $activeLocale = strtolower(trim((string) app()->getLocale()));
         $services = DB::connection('mysql')
             ->table('neoura.service')
             ->select('serviceid', 'name', 'detail', 'duration', 'price')
@@ -335,7 +347,7 @@ class Ctrl extends Controller
             ->get()
             ->groupBy('serviceid');
 
-        return $services->map(function ($service) use ($descriptionRows) {
+        return $services->map(function ($service) use ($descriptionRows, $activeLocale) {
             $descriptions = $descriptionRows
                 ->get($service->serviceid, collect())
                 ->pluck('name')
@@ -344,16 +356,128 @@ class Ctrl extends Controller
                 ->values()
                 ->all();
 
+            $localized = $this->serviceLocalizedContentById((int) $service->serviceid, $activeLocale);
+            $name = trim((string) ($localized['name'] ?? ''));
+            if ($name === '') {
+                $name = trim((string) $service->name);
+            }
+            $detail = trim((string) ($localized['detail'] ?? ''));
+            if ($detail === '') {
+                $detail = trim((string) ($service->detail ?? ''));
+            }
+            $localizedDescriptions = is_array($localized['descriptions'] ?? null) ? $localized['descriptions'] : [];
+            if (!empty($localizedDescriptions)) {
+                $descriptions = $localizedDescriptions;
+            }
+
             return [
                 'serviceid' => (int) $service->serviceid,
-                'name' => trim((string) $service->name),
-                'detail' => trim((string) ($service->detail ?? '')),
+                'name' => $name,
+                'detail' => $detail,
                 'duration' => trim((string) $service->duration),
                 'price' => trim((string) $service->price),
                 'price_display' => $this->formatRupiahLabel((string) $service->price),
                 'descriptions' => $descriptions,
             ];
         })->all();
+    }
+
+    private function serviceTranslationFile(): string
+    {
+        return storage_path('app/service-content-translations.json');
+    }
+
+    private function serviceTranslations(): array
+    {
+        $file = $this->serviceTranslationFile();
+        if (!is_file($file)) {
+            return [];
+        }
+
+        $raw = file_get_contents($file);
+        $decoded = json_decode((string) $raw, true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        return $decoded;
+    }
+
+    private function saveServiceTranslations(array $translations): void
+    {
+        file_put_contents(
+            $this->serviceTranslationFile(),
+            json_encode($translations, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+        );
+    }
+
+    private function normalizedServiceDescriptionLines(array $lines): array
+    {
+        return collect($lines)
+            ->map(fn($line) => trim((string) $line))
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    private function serviceLocalizedContentById(int $serviceId, string $locale): array
+    {
+        if ($serviceId <= 0 || !in_array($locale, ['en', 'id'], true)) {
+            return [];
+        }
+
+        $translations = $this->serviceTranslations();
+        $key = (string) $serviceId;
+        $entry = is_array($translations[$key] ?? null) ? $translations[$key] : [];
+        if (empty($entry)) {
+            return [];
+        }
+
+        $name = trim((string) ($entry['name_' . $locale] ?? ''));
+        $detail = trim((string) ($entry['detail_' . $locale] ?? ''));
+        $descriptions = $this->normalizedServiceDescriptionLines(
+            is_array($entry['descriptions_' . $locale] ?? null) ? $entry['descriptions_' . $locale] : []
+        );
+
+        return [
+            'name' => $name,
+            'detail' => $detail,
+            'descriptions' => $descriptions,
+        ];
+    }
+
+    private function saveServiceLocalizedContentById(int $serviceId, string $locale, string $name, string $detail, array $descriptions): void
+    {
+        if ($serviceId <= 0 || !in_array($locale, ['en', 'id'], true)) {
+            return;
+        }
+
+        $translations = $this->serviceTranslations();
+        $key = (string) $serviceId;
+        $entry = is_array($translations[$key] ?? null) ? $translations[$key] : [];
+
+        $entry['name_' . $locale] = trim($name);
+        $entry['detail_' . $locale] = trim($detail);
+        $entry['descriptions_' . $locale] = $this->normalizedServiceDescriptionLines($descriptions);
+        $translations[$key] = $entry;
+
+        $this->saveServiceTranslations($translations);
+    }
+
+    private function deleteServiceLocalizedContentById(int $serviceId): void
+    {
+        if ($serviceId <= 0) {
+            return;
+        }
+
+        $translations = $this->serviceTranslations();
+        $key = (string) $serviceId;
+        if (!array_key_exists($key, $translations)) {
+            return;
+        }
+
+        unset($translations[$key]);
+        $this->saveServiceTranslations($translations);
     }
 
     private function serviceRecycleBinFile(): string
@@ -1210,24 +1334,52 @@ class Ctrl extends Controller
         }
     }
 
-    private function defaultCarouselSlides(): array
+    private function defaultCarouselSlides(?string $locale = null): array
     {
+        $activeLocale = strtolower(trim((string) ($locale ?? app()->getLocale())));
+        if (!in_array($activeLocale, ['en', 'id'], true)) {
+            $activeLocale = 'en';
+        }
+
+        if ($activeLocale === 'id') {
+            return [
+                [
+                    'title' => 'Foto Uji 01',
+                    'description' => 'Contoh konten carousel untuk menampilkan informasi utama studio Anda.',
+                    'image_path' => '',
+                    'solid_class' => 'slide-solid-1',
+                ],
+                [
+                    'title' => 'Foto Uji 02',
+                    'description' => 'Sesuaikan judul dan deskripsi ini melalui menu edit carousel di beranda.',
+                    'image_path' => '',
+                    'solid_class' => 'slide-solid-2',
+                ],
+                [
+                    'title' => 'Foto Uji 03',
+                    'description' => 'Gunakan gambar terbaik untuk memperkenalkan layanan personal color Anda.',
+                    'image_path' => '',
+                    'solid_class' => 'slide-solid-3',
+                ],
+            ];
+        }
+
         return [
             [
                 'title' => 'Testing Picture 01',
-                'description' => 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore.',
+                'description' => 'Sample carousel content to highlight your studio main information.',
                 'image_path' => '',
                 'solid_class' => 'slide-solid-1',
             ],
             [
                 'title' => 'Testing Picture 02',
-                'description' => 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Ut enim ad minim veniam, quis nostrud exercitation.',
+                'description' => 'Customize this title and description from the home carousel editor.',
                 'image_path' => '',
                 'solid_class' => 'slide-solid-2',
             ],
             [
                 'title' => 'Testing Picture 03',
-                'description' => 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis aute irure dolor in reprehenderit in voluptate.',
+                'description' => 'Use your best images to introduce your personal color services.',
                 'image_path' => '',
                 'solid_class' => 'slide-solid-3',
             ],
@@ -1292,12 +1444,24 @@ class Ctrl extends Controller
 
     private function saveAboutContent(array $about): void
     {
-        $payload = [
-            'title' => trim((string) ($about['title'] ?? '')),
-            'description' => trim((string) ($about['description'] ?? '')),
-        ];
+        $locale = strtolower(trim((string) app()->getLocale()));
+        if (!in_array($locale, ['en', 'id'], true)) {
+            $locale = 'en';
+        }
 
+        $existing = [];
         $file = storage_path('app/about-content.json');
+        if (is_file($file)) {
+            $decoded = json_decode((string) file_get_contents($file), true);
+            if (is_array($decoded)) {
+                $existing = $decoded;
+            }
+        }
+
+        $payload = $existing;
+        $payload['title_' . $locale] = trim((string) ($about['title'] ?? ''));
+        $payload['description_' . $locale] = trim((string) ($about['description'] ?? ''));
+
         file_put_contents($file, json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
     }
 
@@ -1359,13 +1523,99 @@ class Ctrl extends Controller
 
     private function saveContactSectionContent(array $contactSection): void
     {
-        $payload = [
-            'title' => trim((string) ($contactSection['title'] ?? '')),
-            'description' => trim((string) ($contactSection['description'] ?? '')),
-        ];
+        $locale = strtolower(trim((string) app()->getLocale()));
+        if (!in_array($locale, ['en', 'id'], true)) {
+            $locale = 'en';
+        }
 
+        $existing = [];
         $file = storage_path('app/contact-section-content.json');
+        if (is_file($file)) {
+            $decoded = json_decode((string) file_get_contents($file), true);
+            if (is_array($decoded)) {
+                $existing = $decoded;
+            }
+        }
+
+        $payload = $existing;
+        $payload['title_' . $locale] = trim((string) ($contactSection['title'] ?? ''));
+        $payload['description_' . $locale] = trim((string) ($contactSection['description'] ?? ''));
+
         file_put_contents($file, json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+    }
+
+    private function carouselContentFile(): string
+    {
+        return storage_path('app/carousel-content.json');
+    }
+
+    private function carouselLocalizedContent(): array
+    {
+        $file = $this->carouselContentFile();
+        if (!is_file($file)) {
+            return [];
+        }
+
+        $decoded = json_decode((string) file_get_contents($file), true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        return collect(array_values($decoded))
+            ->map(function ($row) {
+                if (!is_array($row)) {
+                    return null;
+                }
+
+                return [
+                    'title_en' => trim((string) ($row['title_en'] ?? '')),
+                    'description_en' => trim((string) ($row['description_en'] ?? '')),
+                    'title_id' => trim((string) ($row['title_id'] ?? '')),
+                    'description_id' => trim((string) ($row['description_id'] ?? '')),
+                ];
+            })
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    private function saveCarouselLocalizedContent(array $slides): void
+    {
+        $locale = strtolower(trim((string) app()->getLocale()));
+        if (!in_array($locale, ['en', 'id'], true)) {
+            $locale = 'en';
+        }
+
+        $existing = $this->carouselLocalizedContent();
+        $payload = [];
+
+        foreach (array_values($slides) as $index => $slide) {
+            $current = is_array($existing[$index] ?? null) ? $existing[$index] : [];
+            $row = [
+                'title_en' => trim((string) ($current['title_en'] ?? '')),
+                'description_en' => trim((string) ($current['description_en'] ?? '')),
+                'title_id' => trim((string) ($current['title_id'] ?? '')),
+                'description_id' => trim((string) ($current['description_id'] ?? '')),
+            ];
+
+            $title = trim((string) ($slide['title'] ?? ''));
+            $description = trim((string) ($slide['description'] ?? ''));
+
+            if ($locale === 'id') {
+                $row['title_id'] = $title;
+                $row['description_id'] = $description;
+            } else {
+                $row['title_en'] = $title;
+                $row['description_en'] = $description;
+            }
+
+            $payload[] = $row;
+        }
+
+        file_put_contents(
+            $this->carouselContentFile(),
+            json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+        );
     }
 
     private function decorateCarouselSlides(array $slides): array
@@ -1379,7 +1629,7 @@ class Ctrl extends Controller
             $description = trim((string) ($slide['description'] ?? ''));
 
             $normalized[] = [
-                'title' => $title !== '' ? $title : 'Slide ' . ($index + 1),
+                'title' => $title !== '' ? $title : __('ui.home.slide_label', ['number' => $index + 1]),
                 'description' => $description !== '' ? $description : '',
                 'image_path' => $path,
                 'image_url' => $path !== '' ? asset(ltrim($path, '/')) : '',
@@ -1392,7 +1642,15 @@ class Ctrl extends Controller
 
     private function carouselSlides(): array
     {
-        $defaults = $this->decorateCarouselSlides($this->defaultCarouselSlides());
+        $locale = strtolower(trim((string) app()->getLocale()));
+        if (!in_array($locale, ['en', 'id'], true)) {
+            $locale = 'en';
+        }
+
+        $defaults = $this->decorateCarouselSlides($this->defaultCarouselSlides($locale));
+        $defaultsEn = $this->decorateCarouselSlides($this->defaultCarouselSlides('en'));
+        $defaultsId = $this->decorateCarouselSlides($this->defaultCarouselSlides('id'));
+        $localized = $this->carouselLocalizedContent();
         $rows = DB::connection('mysql')
             ->table('neoura.carousel')
             ->select('file', 'title', 'description')
@@ -1420,10 +1678,46 @@ class Ctrl extends Controller
 
             return $defaults;
         }
-        $slides = $rows->map(function ($row) {
+        $slides = $rows->values()->map(function ($row, $index) use ($localized, $locale) {
+            $content = is_array($localized[$index] ?? null) ? $localized[$index] : [];
+            $localizedTitle = $locale === 'id'
+                ? trim((string) ($content['title_id'] ?? ''))
+                : trim((string) ($content['title_en'] ?? ''));
+            $localizedDescription = $locale === 'id'
+                ? trim((string) ($content['description_id'] ?? ''))
+                : trim((string) ($content['description_en'] ?? ''));
+            $fallbackTitle = trim((string) ($row->title ?? ''));
+            $fallbackDescription = trim((string) ($row->description ?? ''));
+            $defaultEnTitle = trim((string) ($defaultsEn[$index]['title'] ?? ''));
+            $defaultEnDescription = trim((string) ($defaultsEn[$index]['description'] ?? ''));
+            $defaultIdTitle = trim((string) ($defaultsId[$index]['title'] ?? ''));
+            $defaultIdDescription = trim((string) ($defaultsId[$index]['description'] ?? ''));
+            $resolvedTitle = $localizedTitle;
+            $resolvedDescription = $localizedDescription;
+
+            if ($resolvedTitle === '') {
+                if ($locale === 'id' && $fallbackTitle === $defaultEnTitle) {
+                    $resolvedTitle = $defaultIdTitle;
+                } elseif ($locale === 'en' && $fallbackTitle === $defaultIdTitle) {
+                    $resolvedTitle = $defaultEnTitle;
+                } else {
+                    $resolvedTitle = $fallbackTitle;
+                }
+            }
+
+            if ($resolvedDescription === '') {
+                if ($locale === 'id' && $fallbackDescription === $defaultEnDescription) {
+                    $resolvedDescription = $defaultIdDescription;
+                } elseif ($locale === 'en' && $fallbackDescription === $defaultIdDescription) {
+                    $resolvedDescription = $defaultEnDescription;
+                } else {
+                    $resolvedDescription = $fallbackDescription;
+                }
+            }
+
             return [
-                'title' => trim((string) ($row->title ?? '')),
-                'description' => trim((string) ($row->description ?? '')),
+                'title' => $resolvedTitle,
+                'description' => $resolvedDescription,
                 'image_path' => trim((string) ($row->file ?? '')),
             ];
         })->all();
@@ -1788,6 +2082,16 @@ class Ctrl extends Controller
         return in_array($level, ['admin', 'owner', 'manager', 'superadmin'], true);
     }
 
+    private function canEditHomeContent(?array $adminAuth): bool
+    {
+        if (empty($adminAuth['levelname'])) {
+            return false;
+        }
+
+        $level = strtolower(trim((string) $adminAuth['levelname']));
+        return in_array($level, ['admin', 'owner', 'superadmin'], true);
+    }
+
     private function isSuperAdmin(?array $adminAuth): bool
     {
         if (empty($adminAuth['levelname'])) {
@@ -1814,12 +2118,12 @@ class Ctrl extends Controller
 
     private function defaultThemeSoftColor(): string
     {
-        return '#F2D5C4';
+        return '#F7E7CE';
     }
 
     private function defaultThemeBoldColor(): string
     {
-        return '#C69278';
+        return '#C6A67A';
     }
 
     private function normalizeHexColor(?string $hex, string $fallback): string
@@ -1953,8 +2257,19 @@ class Ctrl extends Controller
     public function home(Request $request)
     {
         $homeServices = $this->servicePageRows();
+        usort($homeServices, function (array $left, array $right): int {
+            $leftPrice = $this->parseRupiahAmount((string) ($left['price'] ?? ''));
+            $rightPrice = $this->parseRupiahAmount((string) ($right['price'] ?? ''));
+
+            if ($leftPrice === $rightPrice) {
+                return ((int) ($left['serviceid'] ?? 0)) <=> ((int) ($right['serviceid'] ?? 0));
+            }
+
+            return $leftPrice <=> $rightPrice;
+        });
         $adminAuth = $request->session()->get('admin_auth');
         $showAdminMenu = $this->canSeeAdminMenu($adminAuth);
+        $canEditHomeContent = $this->canEditHomeContent($adminAuth);
         $website = $this->websiteSettings();
         $carouselSlides = $this->carouselSlides();
         $carouselSettings = $this->carouselSettings();
@@ -1965,7 +2280,7 @@ class Ctrl extends Controller
         $bookingLookupError = (string) $request->session()->get('booking_lookup_error', '');
 
         $data = [
-            'title' => $website['name'] . ' | Personal Color Analysis',
+            'title' => $website['name'] . ' | ' . __('ui.home.personal_color_analysis'),
             'contact' => [
                 'phone' => $website['phone'],
                 'instagram' => $website['instagram'],
@@ -1975,6 +2290,7 @@ class Ctrl extends Controller
             'homeServices' => $homeServices,
             'adminAuth' => $adminAuth,
             'showAdminMenu' => $showAdminMenu,
+            'canEditHomeContent' => $canEditHomeContent,
             'sidebarPermissionMap' => $this->sidebarPermissionMapForAuth($adminAuth),
             'website' => $website,
             'carouselSlides' => $carouselSlides,
@@ -2112,6 +2428,7 @@ class Ctrl extends Controller
 
     public function bookingSubmit(Request $request)
     {
+        $this->ensureBookingPriceSnapshotSchema();
         $packages = $this->bookingPackagesFromDatabase();
         $selectedPlan = (string) $request->query('plan', '');
         if ($selectedPlan === '' || !array_key_exists($selectedPlan, $packages)) {
@@ -2222,6 +2539,7 @@ class Ctrl extends Controller
                     'email' => $validated['email'],
                     'phonenumber' => $validated['phone'],
                     'serviceid' => $serviceId,
+                    'service_price_snapshot' => (string) ($bookingPackage['price'] ?? ''),
                     'slotid' => $slotId,
                     'status' => 'Pending',
                     'bookingcode' => $bookingCode,
@@ -2284,6 +2602,10 @@ class Ctrl extends Controller
         $validated = $request->validate([
             'booking_code' => ['required', 'string', 'max:255'],
             'phone_last4' => ['required', 'regex:/^\d{4}$/'],
+        ], [
+            'booking_code.required' => __('ui.home.booking_code_required'),
+            'phone_last4.required' => __('ui.home.phone_last4_required'),
+            'phone_last4.regex' => __('ui.home.phone_last4_format'),
         ]);
 
         $bookingCode = strtoupper(trim((string) $validated['booking_code']));
@@ -2309,7 +2631,7 @@ class Ctrl extends Controller
         if (!$row) {
             return redirect()
                 ->to(route('home') . '#booking-status')
-                ->with('booking_lookup_error', 'Booking code not found.')
+                ->with('booking_lookup_error', __('ui.home.booking_not_found'))
                 ->withInput();
         }
 
@@ -2318,7 +2640,7 @@ class Ctrl extends Controller
         if ($actualLast4 !== $phoneLast4) {
             return redirect()
                 ->to(route('home') . '#booking-status')
-                ->with('booking_lookup_error', 'Last 4 digits of phone number are not valid.')
+                ->with('booking_lookup_error', __('ui.home.booking_phone_mismatch'))
                 ->withInput();
         }
 
@@ -2612,7 +2934,12 @@ class Ctrl extends Controller
             . '; price ' . trim((string) ($validated['price'] ?? '-'))
         );
 
-        DB::connection('mysql')->transaction(function () use ($validated, $descriptions) {
+        $activeLocale = strtolower(trim((string) app()->getLocale()));
+        if (!in_array($activeLocale, ['en', 'id'], true)) {
+            $activeLocale = 'en';
+        }
+
+        DB::connection('mysql')->transaction(function () use ($validated, $descriptions, $activeLocale) {
             $serviceId = DB::connection('mysql')
                 ->table('neoura.service')
                 ->insertGetId([
@@ -2634,6 +2961,14 @@ class Ctrl extends Controller
                     ->table('neoura.description')
                     ->insert($rows);
             }
+
+            $this->saveServiceLocalizedContentById(
+                (int) $serviceId,
+                $activeLocale,
+                (string) ($validated['name'] ?? ''),
+                (string) ($validated['detail'] ?? ''),
+                $descriptions->all()
+            );
         });
 
         if ($request->expectsJson() || $request->ajax()) {
@@ -2692,34 +3027,57 @@ class Ctrl extends Controller
         );
         $this->archiveServiceRecycleEntry('update', $serviceid, $adminAuth, (string) $request->ip(), $nextSnapshot);
 
-        DB::connection('mysql')->transaction(function () use ($serviceid, $validated, $descriptions) {
-            DB::connection('mysql')
-                ->table('neoura.service')
-                ->where('serviceid', $serviceid)
-                ->update([
-                    'name' => $validated['name'],
-                    'detail' => $validated['detail'],
-                    'duration' => $validated['duration'],
-                    'price' => $validated['price'],
-                ]);
+        $activeLocale = strtolower(trim((string) app()->getLocale()));
+        if (!in_array($activeLocale, ['en', 'id'], true)) {
+            $activeLocale = 'en';
+        }
 
-            DB::connection('mysql')
-                ->table('neoura.description')
-                ->where('serviceid', $serviceid)
-                ->delete();
-
-            if ($descriptions->isNotEmpty()) {
-                $rows = $descriptions->map(function ($description) use ($serviceid) {
-                    return [
-                        'name' => $description,
-                        'serviceid' => $serviceid,
-                    ];
-                })->all();
+        DB::connection('mysql')->transaction(function () use ($serviceid, $validated, $descriptions, $activeLocale) {
+            if ($activeLocale === 'en') {
+                DB::connection('mysql')
+                    ->table('neoura.service')
+                    ->where('serviceid', $serviceid)
+                    ->update([
+                        'name' => $validated['name'],
+                        'detail' => $validated['detail'],
+                        'duration' => $validated['duration'],
+                        'price' => $validated['price'],
+                    ]);
 
                 DB::connection('mysql')
                     ->table('neoura.description')
-                    ->insert($rows);
+                    ->where('serviceid', $serviceid)
+                    ->delete();
+
+                if ($descriptions->isNotEmpty()) {
+                    $rows = $descriptions->map(function ($description) use ($serviceid) {
+                        return [
+                            'name' => $description,
+                            'serviceid' => $serviceid,
+                        ];
+                    })->all();
+
+                    DB::connection('mysql')
+                        ->table('neoura.description')
+                        ->insert($rows);
+                }
+            } else {
+                DB::connection('mysql')
+                    ->table('neoura.service')
+                    ->where('serviceid', $serviceid)
+                    ->update([
+                        'duration' => $validated['duration'],
+                        'price' => $validated['price'],
+                    ]);
             }
+
+            $this->saveServiceLocalizedContentById(
+                $serviceid,
+                $activeLocale,
+                (string) ($validated['name'] ?? ''),
+                (string) ($validated['detail'] ?? ''),
+                $descriptions->all()
+            );
         });
 
         return redirect()->route('admin.service')->with('status', 'Service updated.');
@@ -2764,6 +3122,8 @@ class Ctrl extends Controller
                 ->table('neoura.service')
                 ->where('serviceid', $serviceid)
                 ->delete();
+
+            $this->deleteServiceLocalizedContentById($serviceid);
         });
 
         return redirect()->route('admin.service')->with('status', 'Service deleted.');
@@ -2992,6 +3352,14 @@ class Ctrl extends Controller
 
         $selectedBank = trim((string) $request->query('bank', ''));
         $selectedStatus = strtolower(trim((string) $request->query('status', '')));
+        $paymentPopupMessage = trim((string) $request->query('popup_message', ''));
+        if (mb_strlen($paymentPopupMessage) > 220) {
+            $paymentPopupMessage = mb_substr($paymentPopupMessage, 0, 220);
+        }
+        $paymentPopupType = strtolower(trim((string) $request->query('popup_type', 'success')));
+        if (!in_array($paymentPopupType, ['success', 'error'], true)) {
+            $paymentPopupType = 'success';
+        }
         if (!in_array($selectedStatus, ['pending', 'approved', 'rejected'], true)) {
             $selectedStatus = '';
         }
@@ -3054,6 +3422,8 @@ class Ctrl extends Controller
             'bankOptions' => $bankOptions,
             'paymentRows' => $paymentRows,
             'paymentPagination' => $paymentPagination,
+            'paymentPopupMessage' => $paymentPopupMessage,
+            'paymentPopupType' => $paymentPopupType,
             'pageScript' => 'admin-payment.js',
         ];
 
@@ -3143,6 +3513,22 @@ class Ctrl extends Controller
         ]);
         $this->ensurePaymentValidationSchema();
 
+        $redirectQuery = [];
+        $redirectStatus = strtolower(trim((string) ($validated['redirect_status'] ?? '')));
+        if (in_array($redirectStatus, ['pending', 'approved', 'rejected'], true)) {
+            $redirectQuery['status'] = $redirectStatus;
+        }
+
+        $redirectBank = trim((string) ($validated['redirect_bank'] ?? ''));
+        if ($redirectBank !== '') {
+            $redirectQuery['bank'] = $redirectBank;
+        }
+
+        $redirectPage = (int) ($validated['redirect_page'] ?? 1);
+        if ($redirectPage > 1) {
+            $redirectQuery['page'] = $redirectPage;
+        }
+
         $booking = DB::connection('mysql')
             ->table('neoura.booking')
             ->select('bookingid', 'slotid', 'status')
@@ -3150,7 +3536,9 @@ class Ctrl extends Controller
             ->first();
 
         if (!$booking) {
-            return redirect()->route('admin.payment')->withErrors(['payment' => 'Booking not found.']);
+            $redirectQuery['popup_type'] = 'error';
+            $redirectQuery['popup_message'] = 'Booking not found.';
+            return redirect()->route('admin.payment', $redirectQuery);
         }
 
         $nextStatus = $validated['action'] === 'approve' ? 'Approved' : 'Rejected';
@@ -3182,25 +3570,9 @@ class Ctrl extends Controller
             }
         });
 
-
-        return redirect()->route('admin.payment')->with('status', 'Payment status updated to ' . $nextStatus . '.');
-        $redirectQuery = [];
-        $redirectStatus = strtolower(trim((string) ($validated['redirect_status'] ?? '')));
-        if (in_array($redirectStatus, ['pending', 'approved', 'rejected'], true)) {
-            $redirectQuery['status'] = $redirectStatus;
-        }
-
-        $redirectBank = trim((string) ($validated['redirect_bank'] ?? ''));
-        if ($redirectBank !== '') {
-            $redirectQuery['bank'] = $redirectBank;
-        }
-
-        $redirectPage = (int) ($validated['redirect_page'] ?? 1);
-        if ($redirectPage > 1) {
-            $redirectQuery['page'] = $redirectPage;
-        }
-
-        return redirect()->route('admin.payment', $redirectQuery)->with('status', 'Payment status updated to ' . $nextStatus . '.');
+        $redirectQuery['popup_type'] = 'success';
+        $redirectQuery['popup_message'] = 'Payment status updated to ' . $nextStatus . '.';
+        return redirect()->route('admin.payment', $redirectQuery);
     }
 
     public function adminUserData(Request $request)
@@ -3811,6 +4183,14 @@ class Ctrl extends Controller
         $sidebarServices = $this->sidebarServices();
         $actorLevel = strtolower(trim((string) ($adminAuth['levelname'] ?? '')));
         $actorUserId = (int) ($adminAuth['userid'] ?? 0);
+        $allowedLevelFilters = match ($actorLevel) {
+            'superadmin' => ['superadmin', 'admin', 'manager'],
+            'admin' => ['admin', 'manager'],
+            'manager' => ['manager'],
+            default => [],
+        };
+        $requestedLevel = strtolower(trim((string) $request->query('level', '0')));
+        $selectedLevelFilter = in_array($requestedLevel, $allowedLevelFilters, true) ? $requestedLevel : '0';
 
         $filteredEntries = collect($this->activityLogEntries())
             ->filter(fn($entry) => is_array($entry))
@@ -3823,7 +4203,11 @@ class Ctrl extends Controller
                 $entryUserId = (int) ($actor['userid'] ?? 0);
                 $entryLevel = strtolower(trim((string) ($actor['levelname'] ?? '')));
 
-                if (in_array($actorLevel, ['admin', 'manager'], true)) {
+                if ($actorLevel === 'admin') {
+                    return in_array($entryLevel, ['admin', 'manager'], true);
+                }
+
+                if ($actorLevel === 'manager') {
                     return $actorUserId > 0 && $entryUserId === $actorUserId;
                 }
 
@@ -3832,6 +4216,19 @@ class Ctrl extends Controller
                 }
 
                 return false;
+            })
+            ->filter(function ($entry) use ($selectedLevelFilter) {
+                if ($selectedLevelFilter === '0') {
+                    return true;
+                }
+
+                if (!is_array($entry)) {
+                    return false;
+                }
+
+                $actor = is_array($entry['actor'] ?? null) ? $entry['actor'] : [];
+                $entryLevel = strtolower(trim((string) ($actor['levelname'] ?? '')));
+                return $entryLevel === $selectedLevelFilter;
             })
             ->values()
             ->all();
@@ -3876,8 +4273,19 @@ class Ctrl extends Controller
                 'status' => 'ok',
                 'html' => $html,
                 'pagination' => $pagination,
+                'filters' => [
+                    'level' => $selectedLevelFilter,
+                ],
             ]);
         }
+
+        $levelFilterOptions = collect($allowedLevelFilters)
+            ->map(fn($level) => [
+                'value' => $level,
+                'label' => __('ui.common.' . $level),
+            ])
+            ->values()
+            ->all();
 
         $data = [
             'title' => 'Activity Log | ' . $website['name'],
@@ -3888,6 +4296,8 @@ class Ctrl extends Controller
             'website' => $website,
             'activityEntries' => $activityEntries,
             'activityPagination' => $pagination,
+            'activityLevelFilterOptions' => $levelFilterOptions,
+            'activitySelectedLevelFilter' => $selectedLevelFilter,
             'pageScript' => 'admin-activity-log.js',
         ];
 
@@ -3965,6 +4375,7 @@ class Ctrl extends Controller
     private function approvedPaymentIncomeEntries(): array
     {
         $this->ensurePaymentValidationSchema();
+        $this->ensureBookingPriceSnapshotSchema();
 
         return DB::connection('mysql')
             ->table('neoura.payment as p')
@@ -3973,6 +4384,8 @@ class Ctrl extends Controller
             ->select(
                 'p.paymentdate',
                 'p.validated_at',
+                'b.serviceid',
+                'b.service_price_snapshot',
                 's.price as service_price'
             )
             ->whereRaw('LOWER(TRIM(COALESCE(b.status, ""))) = ?', ['approved'])
@@ -3984,7 +4397,10 @@ class Ctrl extends Controller
                 $sourceDateRaw = $validatedAtRaw !== '' ? $validatedAtRaw : $paymentDateRaw;
                 $timestamp = strtotime($sourceDateRaw);
                 $paymentDate = $timestamp !== false ? date('Y-m-d', $timestamp) : '';
-                $amount = $this->parseRupiahAmount((string) ($row->service_price ?? ''));
+                $snapshotAmount = $this->parseRupiahAmount((string) ($row->service_price_snapshot ?? ''));
+                $serviceAmount = $this->parseRupiahAmount((string) ($row->service_price ?? ''));
+                $legacyAmount = $this->legacyServicePriceByServiceId((int) ($row->serviceid ?? 0));
+                $amount = max($snapshotAmount, $serviceAmount, $legacyAmount, 0);
 
                 return [
                     'payment_date' => $paymentDate,
@@ -3994,6 +4410,18 @@ class Ctrl extends Controller
             ->filter(fn($entry) => is_array($entry) && ($entry['payment_date'] ?? '') !== '')
             ->values()
             ->all();
+    }
+
+    private function legacyServicePriceByServiceId(int $serviceId): int
+    {
+        // Fallback for legacy bookings that still reference old service IDs.
+        $legacyMap = [
+            1 => 850000,  // Basic Session (legacy)
+            2 => 1200000, // Exclusive Session (legacy)
+            3 => 2200000, // Luxe Session (legacy)
+        ];
+
+        return (int) ($legacyMap[$serviceId] ?? 0);
     }
 
     private function ensurePaymentValidationSchema(): void
@@ -4008,6 +4436,21 @@ class Ctrl extends Controller
 
         if (!$validatedAtColumn) {
             $connection->statement('ALTER TABLE neoura.payment ADD COLUMN validated_at DATETIME NULL AFTER paymentdate');
+        }
+    }
+
+    private function ensureBookingPriceSnapshotSchema(): void
+    {
+        $connection = DB::connection('mysql');
+        $schemaName = 'neoura';
+
+        $snapshotColumn = $connection->selectOne(
+            'SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+            [$schemaName, 'booking', 'service_price_snapshot']
+        );
+
+        if (!$snapshotColumn) {
+            $connection->statement('ALTER TABLE neoura.booking ADD COLUMN service_price_snapshot VARCHAR(255) NULL AFTER serviceid');
         }
     }
 
@@ -5567,6 +6010,99 @@ class Ctrl extends Controller
         return '"' . str_replace('"', "'", $normalized) . '"';
     }
 
+    private function normalizeSettingBankRows(array $rows): array
+    {
+        return collect($rows)
+            ->filter(fn($row) => is_array($row))
+            ->map(function ($row) {
+                $bankName = trim((string) ($row['bankname'] ?? ''));
+                $bankNumber = trim((string) ($row['banknumber'] ?? ''));
+                if ($bankName === '' && $bankNumber === '') {
+                    return null;
+                }
+
+                return [
+                    'bankname' => $bankName,
+                    'banknumber' => $bankNumber,
+                ];
+            })
+            ->filter(fn($row) => is_array($row))
+            ->values()
+            ->all();
+    }
+
+    private function settingBankRowsToActivityText(array $rows): string
+    {
+        $normalizedRows = $this->normalizeSettingBankRows($rows);
+        if (empty($normalizedRows)) {
+            return '-';
+        }
+
+        return implode(
+            ', ',
+            array_map(function ($row) {
+                $bankName = trim((string) ($row['bankname'] ?? ''));
+                $bankNumber = trim((string) ($row['banknumber'] ?? ''));
+                if ($bankName !== '' && $bankNumber !== '') {
+                    return $bankName . ' (' . $bankNumber . ')';
+                }
+
+                return $bankName !== '' ? $bankName : $bankNumber;
+            }, $normalizedRows)
+        );
+    }
+
+    private function buildSettingUpdateActivityDetail(array $before, array $after): string
+    {
+        $changes = [];
+
+        $fieldMap = [
+            'systemname' => 'website name',
+            'systemcontact' => 'phone number',
+            'system_insta' => 'instagram',
+            'systemaddress' => 'address',
+            'operational_open' => 'operational start',
+            'operational_close' => 'operational end',
+        ];
+
+        foreach ($fieldMap as $field => $label) {
+            $from = trim((string) ($before[$field] ?? ''));
+            $to = trim((string) ($after[$field] ?? ''));
+            if (hash_equals($from, $to)) {
+                continue;
+            }
+
+            $changes[] = 'edited ' . $label . ' from '
+                . $this->activityQuotedValue($from)
+                . ' to '
+                . $this->activityQuotedValue($to);
+        }
+
+        $beforeShowName = (bool) ($before['show_name_in_brand'] ?? false);
+        $afterShowName = (bool) ($after['show_name_in_brand'] ?? false);
+        if ($beforeShowName !== $afterShowName) {
+            $changes[] = 'edited website name visibility from '
+                . $this->activityQuotedValue($beforeShowName ? 'visible' : 'hidden')
+                . ' to '
+                . $this->activityQuotedValue($afterShowName ? 'visible' : 'hidden');
+        }
+
+        $beforeBanksText = $this->settingBankRowsToActivityText((array) ($before['bank_accounts'] ?? []));
+        $afterBanksText = $this->settingBankRowsToActivityText((array) ($after['bank_accounts'] ?? []));
+        if (!hash_equals($beforeBanksText, $afterBanksText)) {
+            $changes[] = 'edited bank accounts from '
+                . $this->activityQuotedValue($beforeBanksText)
+                . ' to '
+                . $this->activityQuotedValue($afterBanksText);
+        }
+
+        if (empty($changes)) {
+            return 'Updated setting with no field changes.';
+        }
+
+        return ucfirst(implode('; ', $changes)) . '.';
+    }
+
     private function buildAccountUpdateActivityDetail(
         string $currentName,
         string $nextName,
@@ -5609,6 +6145,76 @@ class Ctrl extends Controller
 
         if (empty($segments)) {
             return 'Saved account profile with no data changes.';
+        }
+
+        return ucfirst(implode('; ', $segments)) . '.';
+    }
+
+    private function buildCarouselUpdateActivityDetail(
+        array $beforeSlides,
+        array $afterSlides,
+        int $beforeAutoplayMs,
+        int $afterAutoplayMs
+    ): string {
+        $segments = [];
+
+        if ($beforeAutoplayMs !== $afterAutoplayMs) {
+            $segments[] = 'edited carousel autoplay from '
+                . $this->activityQuotedValue((string) $beforeAutoplayMs . ' ms')
+                . ' to '
+                . $this->activityQuotedValue((string) $afterAutoplayMs . ' ms');
+        }
+
+        $maxSlides = max(count($beforeSlides), count($afterSlides));
+        for ($index = 0; $index < $maxSlides; $index++) {
+            $slideNo = $index + 1;
+            $before = is_array($beforeSlides[$index] ?? null) ? $beforeSlides[$index] : [];
+            $after = is_array($afterSlides[$index] ?? null) ? $afterSlides[$index] : [];
+
+            $beforeTitle = trim((string) ($before['title'] ?? ''));
+            $afterTitle = trim((string) ($after['title'] ?? ''));
+            $beforeDescription = trim((string) ($before['description'] ?? ''));
+            $afterDescription = trim((string) ($after['description'] ?? ''));
+            $beforeImage = trim((string) ($before['image_path'] ?? ''));
+            $afterImage = trim((string) ($after['image_path'] ?? ''));
+
+            $beforeExists = $beforeTitle !== '' || $beforeDescription !== '' || $beforeImage !== '';
+            $afterExists = $afterTitle !== '' || $afterDescription !== '' || $afterImage !== '';
+
+            if (!$beforeExists && $afterExists) {
+                $segments[] = 'added carousel #' . $slideNo . ' with title '
+                    . $this->activityQuotedValue($afterTitle)
+                    . ' and description '
+                    . $this->activityQuotedValue($afterDescription);
+                continue;
+            }
+
+            if ($beforeExists && !$afterExists) {
+                $segments[] = 'removed carousel #' . $slideNo;
+                continue;
+            }
+
+            if (!hash_equals($beforeTitle, $afterTitle)) {
+                $segments[] = 'edited carousel #' . $slideNo . ' title from '
+                    . $this->activityQuotedValue($beforeTitle)
+                    . ' to '
+                    . $this->activityQuotedValue($afterTitle);
+            }
+
+            if (!hash_equals($beforeDescription, $afterDescription)) {
+                $segments[] = 'edited carousel #' . $slideNo . ' description from '
+                    . $this->activityQuotedValue($beforeDescription)
+                    . ' to '
+                    . $this->activityQuotedValue($afterDescription);
+            }
+
+            if (!hash_equals($beforeImage, $afterImage)) {
+                $segments[] = 'edited carousel #' . $slideNo . ' image';
+            }
+        }
+
+        if (empty($segments)) {
+            return 'Updated carousel with no field changes.';
         }
 
         return ucfirst(implode('; ', $segments)) . '.';
@@ -6093,6 +6699,7 @@ class Ctrl extends Controller
 
     public function forgotPasswordEmailSend(Request $request)
     {
+        $isAjax = $request->expectsJson() || $request->ajax();
         $validated = $request->validate([
             'email' => ['required', 'email', 'max:255'],
         ]);
@@ -6100,14 +6707,39 @@ class Ctrl extends Controller
         $targetEmail = trim((string) ($validated['email'] ?? ''));
         $user = $this->forgotPasswordUserByEmail($targetEmail);
         if (!$user) {
+            if ($isAjax) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => __('ui.forgot.messages.email_not_registered'),
+                    'errors' => [
+                        'email' => [__('ui.forgot.messages.email_not_registered')],
+                    ],
+                ], 422);
+            }
             return back()->with('forgot_popup_error', __('ui.forgot.messages.email_not_registered'))->withInput();
         }
 
         $result = $this->queueForgotPasswordEmailReset((int) ($user->userid ?? 0), (string) ($user->email ?? ''));
         if (!(bool) ($result['sent'] ?? false)) {
+            if ($isAjax) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => __('ui.forgot.messages.cannot_send_reset_email'),
+                    'errors' => [
+                        'email' => [__('ui.forgot.messages.cannot_send_reset_email')],
+                    ],
+                ], 422);
+            }
             return back()->withErrors([
                 'email' => __('ui.forgot.messages.cannot_send_reset_email'),
             ])->withInput();
+        }
+
+        if ($isAjax) {
+            return response()->json([
+                'status' => 'ok',
+                'message' => __('ui.forgot.messages.reset_link_sent'),
+            ]);
         }
 
         return redirect()->route('password.forgot.email')->with(
@@ -6217,17 +6849,36 @@ class Ctrl extends Controller
 
     public function forgotPasswordPhoneSendOtp(Request $request)
     {
+        $isAjax = $request->expectsJson() || $request->ajax();
         $validated = $request->validate([
             'phonenumber' => ['required', 'string', 'max:255'],
         ]);
 
         $user = $this->forgotPasswordUserByPhone((string) ($validated['phonenumber'] ?? ''));
         if (!$user) {
+            if ($isAjax) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => __('ui.forgot.messages.phone_not_registered'),
+                    'errors' => [
+                        'phonenumber' => [__('ui.forgot.messages.phone_not_registered')],
+                    ],
+                ], 422);
+            }
             return back()->with('forgot_popup_error', __('ui.forgot.messages.phone_not_registered'))->withInput();
         }
 
         $targetPhone = trim((string) ($user->employer_phone ?? ''));
         if ($targetPhone === '') {
+            if ($isAjax) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => __('ui.forgot.messages.phone_not_registered'),
+                    'errors' => [
+                        'phonenumber' => [__('ui.forgot.messages.phone_not_registered')],
+                    ],
+                ], 422);
+            }
             return back()->with('forgot_popup_error', __('ui.forgot.messages.phone_not_registered'))->withInput();
         }
 
@@ -6235,8 +6886,18 @@ class Ctrl extends Controller
         $result = $this->sendWhatsAppMessage($targetPhone, $this->forgotPasswordPhoneOtpText($otp));
         if (!(bool) ($result['sent'] ?? false)) {
             $reason = trim((string) ($result['reason'] ?? ''));
+            $message = $reason !== '' ? __('ui.forgot.messages.failed_send_otp_with_reason', ['reason' => $reason]) : __('ui.forgot.messages.failed_send_otp');
+            if ($isAjax) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $message,
+                    'errors' => [
+                        'phonenumber' => [$message],
+                    ],
+                ], 422);
+            }
             return back()->withErrors([
-                'phonenumber' => $reason !== '' ? __('ui.forgot.messages.failed_send_otp_with_reason', ['reason' => $reason]) : __('ui.forgot.messages.failed_send_otp'),
+                'phonenumber' => $message,
             ])->withInput();
         }
 
@@ -6249,6 +6910,14 @@ class Ctrl extends Controller
         ]);
         $request->session()->forget('forgot_password_phone_verified_userid');
 
+        if ($isAjax) {
+            return response()->json([
+                'status' => 'ok',
+                'message' => __('ui.forgot.messages.otp_sent'),
+                'redirect' => route('password.forgot.phone'),
+            ]);
+        }
+
         return redirect()->route('password.forgot.phone')->with(
             'status',
             __('ui.forgot.messages.otp_sent')
@@ -6257,12 +6926,22 @@ class Ctrl extends Controller
 
     public function forgotPasswordPhoneVerifyOtp(Request $request)
     {
+        $isAjax = $request->expectsJson() || $request->ajax();
         $validated = $request->validate([
             'otp_code' => ['required', 'regex:/^\d{6}$/'],
         ]);
 
         $otpState = $request->session()->get('forgot_password_phone_otp');
         if (!is_array($otpState)) {
+            if ($isAjax) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => __('ui.forgot.messages.otp_session_not_found'),
+                    'errors' => [
+                        'otp_code' => [__('ui.forgot.messages.otp_session_not_found')],
+                    ],
+                ], 422);
+            }
             return redirect()->route('password.forgot.phone')->withErrors([
                 'otp_code' => __('ui.forgot.messages.otp_session_not_found'),
             ]);
@@ -6270,6 +6949,15 @@ class Ctrl extends Controller
 
         if ((int) ($otpState['expires_at'] ?? 0) < time()) {
             $request->session()->forget('forgot_password_phone_otp');
+            if ($isAjax) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => __('ui.forgot.messages.otp_expired'),
+                    'errors' => [
+                        'otp_code' => [__('ui.forgot.messages.otp_expired')],
+                    ],
+                ], 422);
+            }
             return redirect()->route('password.forgot.phone')->withErrors([
                 'otp_code' => __('ui.forgot.messages.otp_expired'),
             ]);
@@ -6277,6 +6965,15 @@ class Ctrl extends Controller
 
         $otpHash = hash('sha256', (string) ($validated['otp_code'] ?? ''));
         if (!hash_equals((string) ($otpState['otp_hash'] ?? ''), $otpHash)) {
+            if ($isAjax) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => __('ui.forgot.messages.otp_invalid'),
+                    'errors' => [
+                        'otp_code' => [__('ui.forgot.messages.otp_invalid')],
+                    ],
+                ], 422);
+            }
             return redirect()->route('password.forgot.phone')->withErrors([
                 'otp_code' => __('ui.forgot.messages.otp_invalid'),
             ]);
@@ -6285,6 +6982,13 @@ class Ctrl extends Controller
         $otpState['verified'] = true;
         $request->session()->put('forgot_password_phone_otp', $otpState);
         $request->session()->put('forgot_password_phone_verified_userid', (int) ($otpState['userid'] ?? 0));
+
+        if ($isAjax) {
+            return response()->json([
+                'status' => 'ok',
+                'redirect' => route('password.forgot.phone.reset'),
+            ]);
+        }
 
         return redirect()->route('password.forgot.phone.reset');
     }
@@ -6316,12 +7020,22 @@ class Ctrl extends Controller
 
     public function forgotPasswordPhoneResetUpdate(Request $request)
     {
+        $isAjax = $request->expectsJson() || $request->ajax();
         $validated = $request->validate([
             'new_password' => ['required', 'string', 'min:6', 'confirmed'],
         ]);
 
         $verifiedUserId = (int) $request->session()->get('forgot_password_phone_verified_userid', 0);
         if ($verifiedUserId <= 0) {
+            if ($isAjax) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => __('ui.forgot.messages.verify_otp_first'),
+                    'errors' => [
+                        'otp_code' => [__('ui.forgot.messages.verify_otp_first')],
+                    ],
+                ], 422);
+            }
             return redirect()->route('password.forgot.phone')->withErrors([
                 'otp_code' => __('ui.forgot.messages.verify_otp_first'),
             ]);
@@ -6340,6 +7054,13 @@ class Ctrl extends Controller
         ]);
 
         $this->grantLoginAccess($request, 900);
+        if ($isAjax) {
+            return response()->json([
+                'status' => 'ok',
+                'message' => __('ui.forgot.messages.password_reset_success'),
+                'redirect' => route('login'),
+            ]);
+        }
         return redirect()->route('login')->with('status', __('ui.forgot.messages.password_reset_success'));
     }
 
@@ -6382,10 +7103,29 @@ class Ctrl extends Controller
 
     public function loginSubmit(Request $request)
     {
+        $isAjax = $request->expectsJson() || $request->ajax();
         $failedLoginAttempts = max(0, (int) $request->session()->get('admin_login_failed_attempts', 0));
         $requireCaptcha = $failedLoginAttempts >= 3;
-        $redirectLoginError = function (array $errors, array $inputKeys = ['username'], ?string $popupMessage = null) use ($request) {
+        $redirectLoginError = function (array $errors, array $inputKeys = ['username'], ?string $popupMessage = null, int $statusCode = 422) use ($request, $isAjax) {
             $this->grantLoginAccess($request, 900);
+            $message = trim((string) ($popupMessage ?? ''));
+            if ($message === '') {
+                $first = reset($errors);
+                if (is_array($first)) {
+                    $message = (string) (reset($first) ?: 'Login failed.');
+                } else {
+                    $message = (string) ($first ?: 'Login failed.');
+                }
+            }
+
+            if ($isAjax) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $message,
+                    'errors' => $errors,
+                ], $statusCode);
+            }
+
             $response = back()->withErrors($errors)->withInput($request->only($inputKeys));
             if ($popupMessage !== null && trim($popupMessage) !== '') {
                 $response = $response->with('login_popup_error', $popupMessage);
@@ -6417,12 +7157,12 @@ class Ctrl extends Controller
             !hash_equals($sessionToken, $validated['login_form_token'])
         ) {
             $request->session()->forget(['admin_login_form_token', 'admin_login_form_expires_at']);
-            $this->grantLoginAccess($request, 900);
-
-            return redirect()->route('login')
-                ->withErrors(['login' => 'Login session expired. Please try again.'])
-                ->with('login_popup_error', 'Login session expired. Please try again.')
-                ->withInput($request->only('username'));
+            return $redirectLoginError(
+                ['login' => 'Login session expired. Please try again.'],
+                ['username'],
+                'Login session expired. Please try again.',
+                419
+            );
         }
 
         if ($requireCaptcha) {
@@ -6546,6 +7286,14 @@ class Ctrl extends Controller
             ]);
         }
 
+        if ($isAjax) {
+            return response()->json([
+                'status' => 'ok',
+                'message' => 'Admin login successful.',
+                'redirect' => route('home'),
+            ]);
+        }
+
         return redirect()->route('home')->with('status', 'Admin login successful.');
     }
 
@@ -6571,7 +7319,7 @@ class Ctrl extends Controller
     public function updateCarousel(Request $request)
     {
         $adminAuth = $request->session()->get('admin_auth');
-        if (!$this->canSeeAdminMenu($adminAuth)) {
+        if (!$this->canEditHomeContent($adminAuth)) {
             return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
         }
 
@@ -6584,6 +7332,8 @@ class Ctrl extends Controller
             'slides.*.image' => ['nullable', 'image', 'max:3072'],
         ]);
 
+        $beforeSlides = $this->carouselSlides();
+        $beforeAutoplayMs = (int) ($this->carouselSettings()['autoplay_ms'] ?? $this->defaultCarouselAutoplayMs());
         $slides = [];
         foreach (array_values($validated['slides']) as $index => $slideData) {
             $existingPath = trim((string) ($slideData['existing_image'] ?? ''));
@@ -6611,9 +7361,17 @@ class Ctrl extends Controller
             ];
         }
 
+        $afterAutoplayMs = (int) ($validated['carousel_autoplay_ms'] ?? $this->defaultCarouselAutoplayMs());
+        $afterSlides = $this->decorateCarouselSlides($slides);
+        $request->attributes->set(
+            'activity_detail_override',
+            $this->buildCarouselUpdateActivityDetail($beforeSlides, $afterSlides, $beforeAutoplayMs, $afterAutoplayMs)
+        );
+
         $this->saveCarouselSlides($slides);
+        $this->saveCarouselLocalizedContent($slides);
         $this->saveCarouselSettings([
-            'autoplay_ms' => (int) ($validated['carousel_autoplay_ms'] ?? $this->defaultCarouselAutoplayMs()),
+            'autoplay_ms' => $afterAutoplayMs,
         ]);
 
         if ($request->expectsJson() || $request->ajax()) {
@@ -6631,7 +7389,7 @@ class Ctrl extends Controller
     public function updateAboutContent(Request $request)
     {
         $adminAuth = $request->session()->get('admin_auth');
-        if (!$this->canSeeAdminMenu($adminAuth)) {
+        if (!$this->canEditHomeContent($adminAuth)) {
             return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
         }
 
@@ -6662,7 +7420,7 @@ class Ctrl extends Controller
     public function updateContactContent(Request $request)
     {
         $adminAuth = $request->session()->get('admin_auth');
-        if (!$this->canSeeAdminMenu($adminAuth)) {
+        if (!$this->canEditHomeContent($adminAuth)) {
             return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
         }
 
@@ -7113,8 +7871,6 @@ class Ctrl extends Controller
             'systemaddress' => ['nullable', 'string', 'max:255'],
             'operational_open' => ['required', 'regex:/^([01]\d|2[0-3]):[0-5]\d$/'],
             'operational_close' => ['required', 'regex:/^([01]\d|2[0-3]):[0-5]\d$/'],
-            'system_theme_color_soft' => ['nullable', 'regex:/^#[0-9A-Fa-f]{6}$/'],
-            'system_theme_color_bold' => ['nullable', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'bankname' => ['nullable', 'array'],
             'bankname.*' => ['nullable', 'string', 'max:255'],
             'banknumber' => ['nullable', 'array'],
@@ -7129,6 +7885,34 @@ class Ctrl extends Controller
 
         $systemId = $system->systemid ?? null;
         $logoPath = (string) ($system->systemlogo ?? 'images/neora-logo.svg');
+        $beforeBankRows = [];
+        if ($systemId) {
+            $beforeBankRows = DB::connection('mysql')
+                ->table('neoura.bank')
+                ->select('bankname', 'banknumber')
+                ->where('systemid', $systemId)
+                ->orderBy('bankid')
+                ->get()
+                ->map(fn($row) => [
+                    'bankname' => trim((string) ($row->bankname ?? '')),
+                    'banknumber' => trim((string) ($row->banknumber ?? '')),
+                ])
+                ->all();
+        }
+
+        $brandDisplayBefore = $this->brandDisplaySettings();
+        $beforeSetting = [
+            'systemname' => trim((string) ($system->systemname ?? '')),
+            'systemcontact' => trim((string) ($system->systemcontact ?? '')),
+            'system_insta' => trim((string) ($system->system_insta ?? '')),
+            'systemaddress' => trim((string) ($system->systemaddress ?? '')),
+            'operational_open' => $this->normalizeOperationalTime($system->operational_open ?? null, '10:00'),
+            'operational_close' => $this->normalizeOperationalTime($system->operational_close ?? null, '22:00'),
+            'show_name_in_brand' => (bool) ($brandDisplayBefore['show_name_in_brand'] ?? $this->defaultBrandNameVisible()),
+            'bank_accounts' => $beforeBankRows,
+        ];
+        $savedSoftColor = $this->normalizeHexColor((string) ($system->color1 ?? ''), $this->defaultThemeSoftColor());
+        $savedBoldColor = $this->normalizeHexColor((string) ($system->color2 ?? ''), $this->defaultThemeBoldColor());
 
         if ($request->hasFile('systemlogo')) {
             $file = $request->file('systemlogo');
@@ -7150,14 +7934,8 @@ class Ctrl extends Controller
             'systemaddress' => $validated['systemaddress'] ?? '',
             'operational_open' => $validated['operational_open'],
             'operational_close' => $validated['operational_close'],
-            'color1' => $this->normalizeHexColor(
-                $validated['system_theme_color_soft'] ?? null,
-                $this->defaultThemeSoftColor()
-            ),
-            'color2' => $this->normalizeHexColor(
-                $validated['system_theme_color_bold'] ?? null,
-                $this->defaultThemeBoldColor()
-            ),
+            'color1' => $savedSoftColor,
+            'color2' => $savedBoldColor,
         ];
 
         if ($this->toMinutes($validated['operational_close']) <= $this->toMinutes($validated['operational_open'])) {
@@ -7190,13 +7968,26 @@ class Ctrl extends Controller
             ];
         }
 
+        $showNameInBrand = (bool) ($validated['website_name_visibility_toggle'] ?? false);
+        $afterSetting = [
+            'systemname' => trim((string) ($validated['systemname'] ?? '')),
+            'systemcontact' => trim((string) ($validated['systemcontact'] ?? '')),
+            'system_insta' => trim((string) ($validated['system_insta'] ?? '')),
+            'systemaddress' => trim((string) ($validated['systemaddress'] ?? '')),
+            'operational_open' => trim((string) ($validated['operational_open'] ?? '')),
+            'operational_close' => trim((string) ($validated['operational_close'] ?? '')),
+            'show_name_in_brand' => $showNameInBrand,
+            'bank_accounts' => $bankRows,
+        ];
+        $request->attributes->set('activity_detail_override', $this->buildSettingUpdateActivityDetail($beforeSetting, $afterSetting));
+
         DB::connection('mysql')->table('neoura.bank')->where('systemid', $systemId)->delete();
         if (!empty($bankRows)) {
             DB::connection('mysql')->table('neoura.bank')->insert($bankRows);
         }
 
         $this->saveBrandDisplaySettings([
-            'show_name_in_brand' => (bool) ($validated['website_name_visibility_toggle'] ?? false),
+            'show_name_in_brand' => $showNameInBrand,
         ]);
 
         return redirect()->route('superadmin.setting')->with('status', 'Website settings updated.');

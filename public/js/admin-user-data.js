@@ -273,8 +273,7 @@
             return;
         }
         clearAddFeedback();
-        addModal.hidden = false;
-        document.body.style.overflow = 'hidden';
+        openFadeModal(addModal);
         addForm?.querySelector('input,select')?.focus();
     };
 
@@ -282,12 +281,10 @@
         if (!addModal) {
             return;
         }
-        addModal.hidden = true;
-        if (!anyModalOpen()) {
-            document.body.style.overflow = '';
-        }
-        addForm?.reset();
-        clearAddFeedback();
+        closeFadeModal(addModal, () => {
+            addForm?.reset();
+            clearAddFeedback();
+        });
     };
 
     openAddBtn?.addEventListener('click', openAddModal);

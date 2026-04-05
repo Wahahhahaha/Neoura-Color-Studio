@@ -3,8 +3,8 @@
         <div class="setting-wrap user-data-shell">
             <div class="section-head user-data-head">
                 <div class="user-data-head-copy">
-                    <p class="eyebrow">{{ __('ui.admin.user_data.eyebrow') }}</p>
-                    <h1>{{ __('ui.admin.user_data.title') }}</h1>
+<!--                     <p class="eyebrow">{{ __('ui.admin.user_data.eyebrow') }}</p>
+ -->                    <h1>{{ __('ui.admin.user_data.title') }}</h1>
                     <p>{{ __('ui.admin.user_data.description') }}</p>
                     <p class="user-data-meta">{{ __('ui.admin.user_data.total_users', ['total' => $userPagination['total'] ?? 0]) }}</p>
                 </div>
@@ -42,7 +42,7 @@
             </div>
 
             <div
-                class="admin-user-table-wrap user-data-table-shell"
+                class="admin-user-table-wrap"
                 data-userdata-table-wrap
                 data-fetch-url="{{ route('admin.userdata') }}"
                 data-reset-url-template="{{ route('admin.userdata.reset_password', ['userid' => '__USER_ID__']) }}"
@@ -64,7 +64,7 @@
                 data-text-delete-confirm="{{ __('ui.admin.user_data.delete_confirm') }}"
                 data-text-user-deleted="{{ __('ui.admin.user_data.user_deleted') }}"
             >
-                <table class="admin-user-table user-data-table">
+                <table class="admin-user-table">
                     <thead>
                         <tr>
                             <th>{{ __('ui.common.username') }}</th>
