@@ -21,6 +21,7 @@ Route::get('/service/luxe-session', [Ctrl::class, 'luxeSession'])->name('service
 Route::get('/booking', [Ctrl::class, 'booking'])->name('booking');
 Route::post('/booking', [Ctrl::class, 'bookingSubmit'])->name('booking.submit');
 Route::post('/booking/status', [Ctrl::class, 'bookingStatusLookup'])->name('booking.status');
+Route::get('/ttime', [Ctrl::class, 'ttime'])->name('ttime');
 Route::get('/login', [Ctrl::class, 'login'])->name('login');
 Route::post('/login', [Ctrl::class, 'loginSubmit'])->name('login.submit');
 Route::get('/forgot-password/email', [Ctrl::class, 'forgotPasswordEmail'])->name('password.forgot.email');
@@ -36,6 +37,7 @@ Route::post('/logout', [Ctrl::class, 'logout'])->name('logout');
 Route::post('/admin/logo-click', [Ctrl::class, 'registerLogoClick'])->name('admin.logo.click');
 Route::post('/carousel/update', [Ctrl::class, 'updateCarousel'])->name('carousel.update');
 Route::post('/about/update', [Ctrl::class, 'updateAboutContent'])->name('about.update');
+Route::post('/about/images/update', [Ctrl::class, 'updateAboutImageSwitcher'])->name('about.images.update');
 Route::post('/contact/update', [Ctrl::class, 'updateContactContent'])->name('contact.update');
 Route::get('/service', [Ctrl::class, 'adminService'])->name('admin.service');
 Route::get('/service/export-excel', [Ctrl::class, 'exportServiceExcel'])->name('admin.service.export_excel');
@@ -48,6 +50,11 @@ Route::post('/recyclebin/{recycleId}/restore', [Ctrl::class, 'superAdminRecycleB
 Route::post('/recyclebin/{recycleId}/delete-permanent', [Ctrl::class, 'superAdminRecycleBinDeletePermanent'])->name('superadmin.recyclebin.delete_permanent');
 Route::get('/paymentvalidation', [Ctrl::class, 'adminPaymentValidation'])->name('admin.payment');
 Route::post('/paymentvalidation/{bookingid}', [Ctrl::class, 'adminPaymentValidationUpdate'])->name('admin.payment.update');
+Route::get('/timeslot', [Ctrl::class, 'adminTimeSlot'])->name('admin.timeslot.alias');
+Route::get('/time-slot', [Ctrl::class, 'adminTimeSlot'])->name('admin.timeslot');
+Route::post('/time-slot/store', [Ctrl::class, 'adminTimeSlotStore'])->name('admin.timeslot.store');
+Route::post('/time-slot/walkin/store', [Ctrl::class, 'adminTimeSlotWalkInStore'])->name('admin.timeslot.walkin.store');
+Route::post('/time-slot/{blockid}/delete', [Ctrl::class, 'adminTimeSlotDelete'])->name('admin.timeslot.delete');
 Route::get('/activity-log', [Ctrl::class, 'adminActivityLog'])->name('admin.activitylog');
 Route::post('/activity-log/location', [Ctrl::class, 'adminActivityLocationUpdate'])->name('admin.activitylog.location');
 

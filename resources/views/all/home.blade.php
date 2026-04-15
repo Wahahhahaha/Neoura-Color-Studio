@@ -221,6 +221,135 @@
         </div>
     @endif
 
+    <section class="about-image-switch section" id="about-image-switch">
+        <div class="container">
+            <div class="about-image-switch-frame fade-in" data-image-switcher data-image-switcher-ms="3200" data-switcher-track>
+                @if (!empty($isSuperAdmin))
+                    <button type="button" class="about-image-switch-edit-btn" data-open-about-image-editor aria-label="{{ __('ui.home.edit_about_images_aria') }}">
+                        <svg viewBox="0 0 24 24" class="admin-icon" aria-hidden="true"><path d="M4 20h4l10-10-4-4L4 16v4zm12-12 2 2"/></svg>
+                    </button>
+                @endif
+
+                @forelse (($aboutImageSwitcherSlides ?? []) as $index => $slide)
+                    <img
+                        src="{{ $slide['image_url'] ?? '' }}"
+                        alt="{{ __('ui.home.about_image_alt', ['number' => $index + 1]) }}"
+                        data-switcher-image-path="{{ $slide['image_path'] ?? '' }}"
+                        class="about-image-switch-item {{ $index === 0 ? 'is-active' : '' }}"
+                        loading="lazy"
+                    >
+                @empty
+                    <div class="about-image-switch-fallback is-active"></div>
+                @endforelse
+            </div>
+        </div>
+    </section>
+
+    @if (!empty($isSuperAdmin))
+        <div class="crop-modal about-image-editor-modal" data-about-image-editor-modal hidden>
+            <div class="crop-modal-backdrop" data-close-about-image-editor></div>
+            <div class="crop-modal-dialog about-image-editor-dialog" role="dialog" aria-modal="true" aria-label="{{ __('ui.home.edit_about_images_aria') }}">
+                <div class="crop-modal-head">
+                    <h2>{{ __('ui.home.edit_about_images_title') }}</h2>
+                    <button type="button" class="crop-close" data-close-about-image-editor aria-label="{{ __('ui.home.close_about_images_editor_aria') }}">x</button>
+                </div>
+
+                <form
+                    method="post"
+                    action="{{ route('about.images.update') }}"
+                    enctype="multipart/form-data"
+                    class="service-modal-form"
+                    data-about-image-editor-form
+                    data-i18n-save-failed="{{ __('ui.home.about_images_save_failed') }}"
+                    data-i18n-updated="{{ __('ui.home.about_images_updated') }}"
+                    data-i18n-network-error="{{ __('ui.home.about_images_network_error') }}"
+                    data-i18n-required="{{ __('ui.home.about_images_required') }}"
+                    data-i18n-image-label="{{ __('ui.home.about_image_label', ['number' => ':number']) }}"
+                    data-i18n-preview-alt="{{ __('ui.home.about_image_preview_alt') }}"
+                >
+                    @csrf
+                    <p class="carousel-editor-feedback" data-about-image-editor-feedback hidden></p>
+
+                    <div class="carousel-editor-tools">
+                        <h3>{{ __('ui.home.about_images') }}</h3>
+                        <button type="button" class="btn btn-outline" data-add-about-image>{{ __('ui.home.add_photo') }}</button>
+                    </div>
+
+                    <div class="carousel-editor-list" data-about-image-list>
+                        @foreach (($aboutImageSwitcherSlides ?? []) as $index => $slide)
+                            <div class="carousel-editor-card" data-about-image-card>
+                                <div class="carousel-editor-card-head">
+                                    <h3 data-about-image-heading>{{ __('ui.home.about_image_label', ['number' => $index + 1]) }}</h3>
+                                    <button type="button" class="carousel-editor-remove" data-remove-about-image>{{ __('ui.home.remove_photo') }}</button>
+                                </div>
+
+                                @if (!empty($slide['image_url']))
+                                    <img src="{{ $slide['image_url'] }}" alt="{{ __('ui.home.about_image_preview_alt') }}" class="carousel-editor-preview">
+                                @endif
+
+                                <input type="hidden" data-field="existing_image" name="about_images[{{ $index }}][existing_image]" value="{{ $slide['image_path'] ?? '' }}">
+
+                                <label>{{ __('ui.home.photo') }}</label>
+                                <input type="file" data-field="image" name="about_images[{{ $index }}][image]" accept="image/*">
+                            </div>
+                        @endforeach
+                    </div>
+
+                    <template data-about-image-template>
+                        <div class="carousel-editor-card" data-about-image-card>
+                            <div class="carousel-editor-card-head">
+                                <h3 data-about-image-heading>{{ __('ui.home.about_image_label', ['number' => 1]) }}</h3>
+                                <button type="button" class="carousel-editor-remove" data-remove-about-image>{{ __('ui.home.remove_photo') }}</button>
+                            </div>
+
+                            <input type="hidden" data-field="existing_image" value="">
+
+                            <label>{{ __('ui.home.photo') }}</label>
+                            <input type="file" data-field="image" accept="image/*">
+                        </div>
+                    </template>
+
+                    <div class="crop-actions service-modal-actions">
+                        <button type="button" class="btn btn-outline" data-close-about-image-editor>{{ __('ui.home.cancel') }}</button>
+                        <button type="submit" class="btn" data-about-image-editor-save>{{ __('ui.home.save_about_images') }}</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="crop-modal about-image-crop-modal" data-about-image-crop-modal hidden>
+            <div class="crop-modal-backdrop" data-close-about-image-crop></div>
+            <div class="crop-modal-dialog about-image-crop-dialog" role="dialog" aria-modal="true" aria-label="{{ __('ui.home.about_crop_image_aria') }}">
+                <div class="crop-modal-head">
+                    <h2>{{ __('ui.home.crop_image') }}</h2>
+                    <button type="button" class="crop-close" data-close-about-image-crop aria-label="{{ __('ui.home.close_crop_modal_aria') }}">x</button>
+                </div>
+
+                <div class="crop-stage-wrap">
+                    <div class="crop-stage" data-about-image-crop-stage>
+                        <img src="" alt="{{ __('ui.home.about_image_preview_alt') }}" data-about-image-crop-image>
+                        <div class="crop-box" data-about-image-crop-box>
+                            <span class="crop-handle crop-handle-nw" data-about-image-crop-handle="nw" aria-hidden="true"></span>
+                            <span class="crop-handle crop-handle-ne" data-about-image-crop-handle="ne" aria-hidden="true"></span>
+                            <span class="crop-handle crop-handle-sw" data-about-image-crop-handle="sw" aria-hidden="true"></span>
+                            <span class="crop-handle crop-handle-se" data-about-image-crop-handle="se" aria-hidden="true"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="crop-controls">
+                    <label for="aboutImageCropZoom">{{ __('ui.home.zoom') }}</label>
+                    <input type="range" id="aboutImageCropZoom" min="1" max="3" step="0.01" value="1" data-about-image-crop-zoom>
+                </div>
+
+                <div class="crop-actions">
+                    <button type="button" class="btn btn-outline" data-close-about-image-crop>{{ __('ui.home.cancel') }}</button>
+                    <button type="button" class="btn" data-apply-about-image-crop>{{ __('ui.home.apply_crop') }}</button>
+                </div>
+            </div>
+        </div>
+    @endif
+
     <section class="services section" id="service">
         <div class="container">
             <div class="section-head fade-in">

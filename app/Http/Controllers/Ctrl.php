@@ -164,6 +164,9 @@ class Ctrl extends Controller
             'admin.userdata.reset_password' => 'Reset User Password',
             'admin.userdata.delete' => 'Delete User',
             'admin.payment.update' => 'Update Payment Validation',
+            'admin.timeslot.store' => 'Create Time Slot Block',
+            'admin.timeslot.walkin.store' => 'Create Walk-In Slot',
+            'admin.timeslot.delete' => 'Delete Time Slot Block',
             'account.update' => 'Update Account',
             'superadmin.recyclebin.restore' => 'Restore Recycle Item',
             'superadmin.recyclebin.delete_permanent' => 'Delete Recycle Item Permanently',
@@ -171,6 +174,7 @@ class Ctrl extends Controller
             'superadmin.permission.update' => 'Update Sidebar Permission',
             'carousel.update' => 'Update Home Carousel',
             'about.update' => 'Update About Content',
+            'about.images.update' => 'Update About Image Switcher',
             'contact.update' => 'Update Contact Section Content',
         ];
 
@@ -826,7 +830,7 @@ class Ctrl extends Controller
 
     private function bookedSlots(): array
     {
-        return DB::connection('mysql')
+        $bookedSlots = DB::connection('mysql')
             ->table('neoura.timeslot')
             ->select('date', 'start_time', 'end_time')
             ->where('is_booked', 1)
@@ -846,6 +850,167 @@ class Ctrl extends Controller
                 ];
             })
             ->all();
+
+        $walkInBlocks = $this->walkInTimeSlotBlocks();
+
+        return array_merge($bookedSlots, array_map(function (array $row) {
+            return [
+                'booking_date' => (string) ($row['booking_date'] ?? ''),
+                'start_time' => (string) ($row['start_time'] ?? ''),
+                'end_time' => (string) ($row['end_time'] ?? ''),
+            ];
+        }, $walkInBlocks));
+    }
+
+    private function walkInTimeSlotBlocks(?string $date = null): array
+    {
+        $this->ensureWalkInTimeSlotSchema();
+
+        $query = DB::connection('mysql')
+            ->table('neoura.walkin_timeslot_block')
+            ->select('blockid', 'date', 'start_time', 'end_time', 'note', 'is_active')
+            ->where('is_active', 1);
+
+        $dateFilter = trim((string) ($date ?? ''));
+        if ($dateFilter !== '') {
+            $query->whereRaw('DATE(date) = ?', [$dateFilter]);
+        }
+
+        return $query
+            ->orderBy('date')
+            ->orderBy('start_time')
+            ->get()
+            ->map(function ($row) {
+                return [
+                    'blockid' => (int) ($row->blockid ?? 0),
+                    'booking_date' => substr((string) ($row->date ?? ''), 0, 10),
+                    'start_time' => substr((string) ($row->start_time ?? ''), 0, 5),
+                    'end_time' => substr((string) ($row->end_time ?? ''), 0, 5),
+                    'note' => trim((string) ($row->note ?? '')),
+                    'is_active' => (int) ($row->is_active ?? 0) === 1,
+                ];
+            })
+            ->all();
+    }
+
+    private function dailySlotRows(string $date, string $open, string $close, int $stepMinutes = 30): array
+    {
+        $openMinutes = $this->toMinutes($open);
+        $closeMinutes = $this->toMinutes($close);
+        if ($openMinutes < 0 || $closeMinutes <= $openMinutes) {
+            return [];
+        }
+
+        $bookedRanges = DB::connection('mysql')
+            ->table('neoura.timeslot')
+            ->select('start_time', 'end_time')
+            ->whereRaw('DATE(date) = ?', [$date])
+            ->where('is_booked', 1)
+            ->orderBy('start_time')
+            ->get()
+            ->map(function ($row) {
+                $start = $this->toMinutes(substr((string) ($row->start_time ?? ''), 0, 5));
+                $end = $this->toMinutes(substr((string) ($row->end_time ?? ''), 0, 5));
+
+                return [
+                    'start' => $start,
+                    'end' => $end,
+                ];
+            })
+            ->filter(fn(array $range) => $range['start'] >= 0 && $range['end'] > $range['start'])
+            ->values()
+            ->all();
+
+        $walkInRanges = collect($this->walkInTimeSlotBlocks($date))
+            ->map(function (array $row) {
+                $start = $this->toMinutes((string) ($row['start_time'] ?? ''));
+                $end = $this->toMinutes((string) ($row['end_time'] ?? ''));
+
+                return [
+                    'start' => $start,
+                    'end' => $end,
+                    'booking_date' => (string) ($row['booking_date'] ?? ''),
+                    'start_time' => (string) ($row['start_time'] ?? ''),
+                    'end_time' => (string) ($row['end_time'] ?? ''),
+                    'note' => trim((string) ($row['note'] ?? '')),
+                ];
+            })
+            ->filter(fn(array $range) => $range['start'] >= 0 && $range['end'] > $range['start'])
+            ->values()
+            ->all();
+
+        $walkInBookingRanges = DB::connection('mysql')
+            ->table('neoura.booking as b')
+            ->join('neoura.timeslot as t', 't.slotid', '=', 'b.slotid')
+            ->leftJoin('neoura.service as s', 's.serviceid', '=', 'b.serviceid')
+            ->select('b.name as customer_name', 't.start_time', 't.end_time', 's.name as package_name')
+            ->whereRaw('DATE(t.date) = ?', [$date])
+            ->where('t.is_booked', 1)
+            ->where('b.phonenumber', 'WALKIN')
+            ->orderBy('t.start_time')
+            ->get()
+            ->map(function ($row) {
+                $start = $this->toMinutes(substr((string) ($row->start_time ?? ''), 0, 5));
+                $end = $this->toMinutes(substr((string) ($row->end_time ?? ''), 0, 5));
+
+                return [
+                    'start' => $start,
+                    'end' => $end,
+                    'customer_name' => trim((string) ($row->customer_name ?? '')),
+                    'package_name' => trim((string) ($row->package_name ?? '')),
+                ];
+            })
+            ->filter(fn(array $range) => $range['start'] >= 0 && $range['end'] > $range['start'])
+            ->values()
+            ->all();
+
+        $slots = [];
+        for ($start = $openMinutes; $start < $closeMinutes; $start += $stepMinutes) {
+            $end = min($start + $stepMinutes, $closeMinutes);
+            $statusKey = 'empty';
+            $walkInDetail = null;
+
+            foreach ($walkInRanges as $range) {
+                if ($this->isOverlap($start, $end, (int) $range['start'], (int) $range['end'])) {
+                    $statusKey = 'walkin';
+                    $walkInDetail = [
+                        'booking_date' => (string) ($range['booking_date'] ?? $date),
+                        'start_time' => (string) ($range['start_time'] ?? $this->toHm((int) $range['start'])),
+                        'end_time' => (string) ($range['end_time'] ?? $this->toHm((int) $range['end'])),
+                        'customer_name' => '',
+                        'package_name' => '',
+                        'note' => (string) ($range['note'] ?? ''),
+                    ];
+
+                    foreach ($walkInBookingRanges as $bookingRange) {
+                        if ($this->isOverlap($start, $end, (int) $bookingRange['start'], (int) $bookingRange['end'])) {
+                            $walkInDetail['customer_name'] = (string) ($bookingRange['customer_name'] ?? '');
+                            $walkInDetail['package_name'] = (string) ($bookingRange['package_name'] ?? '');
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+
+            if ($statusKey === 'empty') {
+                foreach ($bookedRanges as $range) {
+                    if ($this->isOverlap($start, $end, (int) $range['start'], (int) $range['end'])) {
+                        $statusKey = 'booking';
+                        break;
+                    }
+                }
+            }
+
+            $slots[] = [
+                'start_time' => $this->toHm($start),
+                'end_time' => $this->toHm($end),
+                'status_key' => $statusKey,
+                'walkin_detail' => $walkInDetail,
+            ];
+        }
+
+        return $slots;
     }
 
     private function serviceDurationMinutes(string $durationLabel): int
@@ -1544,6 +1709,193 @@ class Ctrl extends Controller
         file_put_contents($file, json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
     }
 
+    private function aboutImageSwitcherFile(): string
+    {
+        return storage_path('app/about-image-switcher.json');
+    }
+
+    private function aboutImageSwitcherTable(): string
+    {
+        return 'neoura.about_image_switcher';
+    }
+
+    private function pictureTable(): string
+    {
+        return 'neoura.picture';
+    }
+
+    private function decorateAboutImageSwitcherSlides(array $slides): array
+    {
+        return collect(array_values($slides))
+            ->map(function ($slide) {
+                $path = trim((string) ($slide['image_path'] ?? ''));
+                if ($path === '') {
+                    return null;
+                }
+
+                return [
+                    'image_path' => $path,
+                    'image_url' => asset(ltrim($path, '/')),
+                ];
+            })
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    private function aboutImageSwitcherSlides(array $fallbackCarouselSlides = []): array
+    {
+        try {
+            $dbSlides = DB::connection('mysql')
+                ->table($this->pictureTable())
+                ->select('file')
+                ->orderBy('pictureid')
+                ->get()
+                ->map(function ($row) {
+                    $path = trim((string) ($row->file ?? ''));
+                    if ($path === '' || !Str::startsWith($path, 'images/')) {
+                        return null;
+                    }
+
+                    return ['image_path' => $path];
+                })
+                ->filter()
+                ->values()
+                ->all();
+
+            if (!empty($dbSlides)) {
+                return $this->decorateAboutImageSwitcherSlides($dbSlides);
+            }
+        } catch (\Throwable $exception) {
+            // Fallback to legacy table/JSON sources when picture table is unavailable.
+        }
+
+        try {
+            $legacyDbSlides = DB::connection('mysql')
+                ->table($this->aboutImageSwitcherTable())
+                ->select('file')
+                ->orderBy('id')
+                ->get()
+                ->map(function ($row) {
+                    $path = trim((string) ($row->file ?? ''));
+                    if ($path === '' || !Str::startsWith($path, 'images/')) {
+                        return null;
+                    }
+
+                    return ['image_path' => $path];
+                })
+                ->filter()
+                ->values()
+                ->all();
+
+            if (!empty($legacyDbSlides)) {
+                return $this->decorateAboutImageSwitcherSlides($legacyDbSlides);
+            }
+        } catch (\Throwable $exception) {
+            // Continue fallback to legacy JSON source.
+        }
+
+        $file = $this->aboutImageSwitcherFile();
+        if (is_file($file)) {
+            $decoded = json_decode((string) file_get_contents($file), true);
+            if (is_array($decoded)) {
+                $savedSlides = collect(array_values($decoded))
+                    ->map(function ($row) {
+                        if (!is_array($row)) {
+                            return null;
+                        }
+
+                        $path = trim((string) ($row['image_path'] ?? ''));
+                        if ($path === '' || !Str::startsWith($path, 'images/')) {
+                            return null;
+                        }
+
+                        return ['image_path' => $path];
+                    })
+                    ->filter()
+                    ->values()
+                    ->all();
+
+                if (!empty($savedSlides)) {
+                    $this->saveAboutImageSwitcherSlides($savedSlides);
+                    return $this->decorateAboutImageSwitcherSlides($savedSlides);
+                }
+            }
+        }
+
+        $fallback = collect(array_values($fallbackCarouselSlides))
+            ->map(function ($slide) {
+                $path = trim((string) ($slide['image_path'] ?? ''));
+                if ($path === '') {
+                    return null;
+                }
+
+                return ['image_path' => $path];
+            })
+            ->filter()
+            ->values()
+            ->take(8)
+            ->all();
+
+        return $this->decorateAboutImageSwitcherSlides($fallback);
+    }
+
+    private function saveAboutImageSwitcherSlides(array $slides): void
+    {
+        $normalizedSlides = collect(array_values($slides))
+            ->map(function ($slide) {
+                if (!is_array($slide)) {
+                    return null;
+                }
+
+                $path = trim((string) ($slide['image_path'] ?? ''));
+                if ($path === '' || !Str::startsWith($path, 'images/')) {
+                    return null;
+                }
+
+                return ['image_path' => $path];
+            })
+            ->filter()
+            ->values()
+            ->all();
+
+        try {
+            $payload = collect($normalizedSlides)
+                ->map(fn(array $slide) => ['file' => $slide['image_path']])
+                ->values()
+                ->all();
+
+            DB::connection('mysql')->transaction(function () use ($payload) {
+                DB::connection('mysql')->table($this->pictureTable())->delete();
+                if (!empty($payload)) {
+                    DB::connection('mysql')->table($this->pictureTable())->insert($payload);
+                }
+            });
+        } catch (\Throwable $exception) {
+            // Fallback to legacy table when picture table is not ready yet.
+            try {
+                $payload = collect($normalizedSlides)
+                    ->map(fn(array $slide) => ['file' => $slide['image_path']])
+                    ->values()
+                    ->all();
+
+                DB::connection('mysql')->transaction(function () use ($payload) {
+                    DB::connection('mysql')->table($this->aboutImageSwitcherTable())->delete();
+                    if (!empty($payload)) {
+                        DB::connection('mysql')->table($this->aboutImageSwitcherTable())->insert($payload);
+                    }
+                });
+            } catch (\Throwable $legacyException) {
+                // Keep legacy JSON save path when database table is not ready yet.
+            }
+        }
+
+        file_put_contents(
+            $this->aboutImageSwitcherFile(),
+            json_encode($normalizedSlides, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+        );
+    }
+
     private function carouselContentFile(): string
     {
         return storage_path('app/carousel-content.json');
@@ -1875,6 +2227,11 @@ class Ctrl extends Controller
                 'description' => 'Access Payment Validation page.',
             ],
             [
+                'key' => 'timeslot',
+                'label' => 'Time Slot',
+                'description' => 'Access Time Slot management page.',
+            ],
+            [
                 'key' => 'user',
                 'label' => 'User Data',
                 'description' => 'Access User Data page.',
@@ -1927,6 +2284,7 @@ class Ctrl extends Controller
             'admin' => [
                 'service' => true,
                 'payment' => true,
+                'timeslot' => true,
                 'user' => true,
                 'activity' => true,
                 'financial' => true,
@@ -1938,6 +2296,7 @@ class Ctrl extends Controller
             'manager' => [
                 'service' => true,
                 'payment' => true,
+                'timeslot' => true,
                 'user' => true,
                 'user' => false,
                 'activity' => true,
@@ -1950,6 +2309,7 @@ class Ctrl extends Controller
             'superadmin' => [
                 'service' => true,
                 'payment' => true,
+                'timeslot' => true,
                 'user' => true,
                 'activity' => true,
                 'financial' => true,
@@ -2270,8 +2630,10 @@ class Ctrl extends Controller
         $adminAuth = $request->session()->get('admin_auth');
         $showAdminMenu = $this->canSeeAdminMenu($adminAuth);
         $canEditHomeContent = $this->canEditHomeContent($adminAuth);
+        $isSuperAdmin = $this->isSuperAdmin($adminAuth);
         $website = $this->websiteSettings();
         $carouselSlides = $this->carouselSlides();
+        $aboutImageSwitcherSlides = $this->aboutImageSwitcherSlides($carouselSlides);
         $carouselSettings = $this->carouselSettings();
         $aboutContent = $this->aboutContent();
         $contactSectionContent = $this->contactSectionContent();
@@ -2291,9 +2653,11 @@ class Ctrl extends Controller
             'adminAuth' => $adminAuth,
             'showAdminMenu' => $showAdminMenu,
             'canEditHomeContent' => $canEditHomeContent,
+            'isSuperAdmin' => $isSuperAdmin,
             'sidebarPermissionMap' => $this->sidebarPermissionMapForAuth($adminAuth),
             'website' => $website,
             'carouselSlides' => $carouselSlides,
+            'aboutImageSwitcherSlides' => $aboutImageSwitcherSlides,
             'carouselAutoplayMs' => (int) ($carouselSettings['autoplay_ms'] ?? $this->defaultCarouselAutoplayMs()),
             'aboutContent' => $aboutContent,
             'contactSectionContent' => $contactSectionContent,
@@ -2426,6 +2790,35 @@ class Ctrl extends Controller
         $this->renderParts(['all.header', 'all.navbar', 'all.booking', 'all.footer'], $data);
     }
 
+    public function ttime()
+    {
+        $website = $this->websiteSettings();
+        $today = now()->toDateString();
+        $operationalOpen = $this->normalizeOperationalTime((string) ($website['operational_open'] ?? ''), '10:00');
+        $operationalClose = $this->normalizeOperationalTime((string) ($website['operational_close'] ?? ''), '22:00');
+        if ($this->toMinutes($operationalClose) <= $this->toMinutes($operationalOpen)) {
+            $operationalOpen = '10:00';
+            $operationalClose = '22:00';
+        }
+
+        $data = [
+            'title' => __('ui.ttime.page_title') . ' | ' . $website['name'],
+            'contact' => [
+                'phone' => $website['phone'],
+                'instagram' => $website['instagram'],
+                'address' => $website['address'],
+                'maps' => $website['maps'],
+            ],
+            'website' => $website,
+            'slotDate' => $today,
+            'slotOpen' => $operationalOpen,
+            'slotClose' => $operationalClose,
+            'slotRows' => $this->dailySlotRows($today, $operationalOpen, $operationalClose),
+        ];
+
+        $this->renderParts(['all.header', 'all.navbar', 'all.ttime', 'all.footer'], $data);
+    }
+
     public function bookingSubmit(Request $request)
     {
         $this->ensureBookingPriceSnapshotSchema();
@@ -2488,6 +2881,8 @@ class Ctrl extends Controller
             ->where('is_booked', 1)
             ->get();
 
+        $walkInBlocks = $this->walkInTimeSlotBlocks((string) $validated['booking_date']);
+
         foreach ($existingSlots as $slot) {
             $existingStart = $this->toMinutes(substr((string) ($slot->start_time ?? ''), 0, 5));
             $existingEnd = $this->toMinutes(substr((string) ($slot->end_time ?? ''), 0, 5));
@@ -2498,6 +2893,20 @@ class Ctrl extends Controller
             if ($this->isOverlap($startMinutes, $endMinutes, $existingStart, $existingEnd)) {
                 return back()
                     ->withErrors(['time_slot' => 'This time slot is already full. Please choose another time.'])
+                    ->withInput();
+            }
+        }
+
+        foreach ($walkInBlocks as $slot) {
+            $existingStart = $this->toMinutes((string) ($slot['start_time'] ?? ''));
+            $existingEnd = $this->toMinutes((string) ($slot['end_time'] ?? ''));
+            if ($existingStart < 0 || $existingEnd <= $existingStart) {
+                continue;
+            }
+
+            if ($this->isOverlap($startMinutes, $endMinutes, $existingStart, $existingEnd)) {
+                return back()
+                    ->withErrors(['time_slot' => 'This time slot is unavailable due to walk-in schedule. Please choose another time.'])
                     ->withInput();
             }
         }
@@ -3575,6 +3984,337 @@ class Ctrl extends Controller
         return redirect()->route('admin.payment', $redirectQuery);
     }
 
+    public function adminTimeSlot(Request $request)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'timeslot')) {
+            return $this->sidebarPermissionDenied($request);
+        }
+
+        $website = $this->websiteSettings();
+        $sidebarServices = $this->sidebarServices();
+        $todayDate = now()->toDateString();
+        $operationalOpen = $this->normalizeOperationalTime((string) ($website['operational_open'] ?? ''), '10:00');
+        $operationalClose = $this->normalizeOperationalTime((string) ($website['operational_close'] ?? ''), '22:00');
+        if ($this->toMinutes($operationalClose) <= $this->toMinutes($operationalOpen)) {
+            $operationalOpen = '10:00';
+            $operationalClose = '22:00';
+        }
+
+        $slotRows = $this->dailySlotRows($todayDate, $operationalOpen, $operationalClose);
+        $walkInPackages = array_values($this->bookingPackagesFromDatabase());
+
+        $data = [
+            'title' => 'Time Slot | ' . $website['name'],
+            'adminAuth' => $adminAuth,
+            'showAdminMenu' => true,
+            'sidebarPermissionMap' => $this->sidebarPermissionMapForAuth($adminAuth),
+            'sidebarServices' => $sidebarServices,
+            'website' => $website,
+            'filterDate' => $todayDate,
+            'slotRows' => $slotRows,
+            'slotOpen' => $operationalOpen,
+            'slotClose' => $operationalClose,
+            'walkInPackages' => $walkInPackages,
+            'pageScript' => 'admin-time-slot.js',
+        ];
+
+        $this->renderParts(['all.header', 'all.menu', 'admin.time-slot', 'all.footer'], $data);
+    }
+
+    public function adminTimeSlotStore(Request $request)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'timeslot')) {
+            return $this->sidebarPermissionDenied($request);
+        }
+
+        $validated = $request->validate([
+            'date' => ['required', 'date_format:Y-m-d'],
+            'start_time' => ['required', 'date_format:H:i'],
+            'end_time' => ['required', 'date_format:H:i'],
+            'note' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $startMinutes = $this->toMinutes((string) $validated['start_time']);
+        $endMinutes = $this->toMinutes((string) $validated['end_time']);
+        if ($startMinutes < 0 || $endMinutes < 0 || $endMinutes <= $startMinutes) {
+            return redirect()
+                ->route('admin.timeslot', ['date' => $validated['date']])
+                ->withErrors(['end_time' => 'End time must be greater than start time.'])
+                ->withInput();
+        }
+
+        $existingBlocks = $this->walkInTimeSlotBlocks((string) $validated['date']);
+        foreach ($existingBlocks as $existing) {
+            $existingStart = $this->toMinutes((string) ($existing['start_time'] ?? ''));
+            $existingEnd = $this->toMinutes((string) ($existing['end_time'] ?? ''));
+            if ($existingStart < 0 || $existingEnd <= $existingStart) {
+                continue;
+            }
+
+            if ($this->isOverlap($startMinutes, $endMinutes, $existingStart, $existingEnd)) {
+                return redirect()
+                    ->route('admin.timeslot', ['date' => $validated['date']])
+                    ->withErrors(['start_time' => 'Time range overlaps with an existing blocked slot.'])
+                    ->withInput();
+            }
+        }
+
+        $this->ensureWalkInTimeSlotSchema();
+
+        DB::connection('mysql')
+            ->table('neoura.walkin_timeslot_block')
+            ->insert([
+                'date' => (string) $validated['date'],
+                'start_time' => (string) $validated['start_time'] . ':00',
+                'end_time' => (string) $validated['end_time'] . ':00',
+                'note' => trim((string) ($validated['note'] ?? '')),
+                'is_active' => 1,
+                'created_by' => trim((string) ($adminAuth['username'] ?? '')),
+                'created_at' => now()->toDateTimeString(),
+                'updated_at' => now()->toDateTimeString(),
+            ]);
+
+        $request->attributes->set('activity_action_override', 'Create Time Slot Block');
+        $request->attributes->set(
+            'activity_detail_override',
+            'Blocked walk-in slot on ' . (string) $validated['date'] . ' from ' . (string) $validated['start_time'] . ' to ' . (string) $validated['end_time']
+        );
+
+        return redirect()
+            ->route('admin.timeslot', ['date' => $validated['date']])
+            ->with('status', 'Time slot blocked successfully.');
+    }
+
+    public function adminTimeSlotWalkInStore(Request $request)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        $isAjaxRequest = $request->expectsJson() || $request->ajax();
+        $errorResponse = function (string $message, int $statusCode = 422) use ($isAjaxRequest) {
+            if ($isAjaxRequest) {
+                return response()->json(['message' => $message], $statusCode);
+            }
+
+            return redirect()->route('admin.timeslot')->withErrors(['timeslot' => $message]);
+        };
+
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            if ($isAjaxRequest) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'timeslot')) {
+            if ($isAjaxRequest) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+
+            return $this->sidebarPermissionDenied($request);
+        }
+
+        $validated = $request->validate([
+            'date' => ['required', 'date_format:Y-m-d'],
+            'start_time' => ['required', 'date_format:H:i'],
+            'customer_name' => ['required', 'string', 'max:255'],
+            'plan' => ['required', 'string', 'max:255'],
+        ]);
+
+        $startTime = (string) $validated['start_time'];
+        $startMinutes = $this->toMinutes($startTime);
+        if ($startMinutes < 0) {
+            return $errorResponse('Invalid start time.');
+        }
+
+        $bookingDate = (string) $validated['date'];
+        $selectedPlan = trim((string) $validated['plan']);
+        $customerName = trim((string) $validated['customer_name']);
+        $packages = $this->bookingPackagesFromDatabase();
+        if (!array_key_exists($selectedPlan, $packages)) {
+            return $errorResponse('Selected package is not available.');
+        }
+
+        $bookingPackage = $packages[$selectedPlan];
+        $durationMinutes = $this->serviceDurationMinutes((string) ($bookingPackage['duration'] ?? '60'));
+        $endMinutes = $startMinutes + max(30, $durationMinutes);
+        $endTime = $this->toHm($endMinutes);
+
+        $walkInBlocks = $this->walkInTimeSlotBlocks($bookingDate);
+        foreach ($walkInBlocks as $slot) {
+            $existingStart = $this->toMinutes((string) ($slot['start_time'] ?? ''));
+            $existingEnd = $this->toMinutes((string) ($slot['end_time'] ?? ''));
+            if ($existingStart < 0 || $existingEnd <= $existingStart) {
+                continue;
+            }
+
+            if ($this->isOverlap($startMinutes, $endMinutes, $existingStart, $existingEnd)) {
+                return $errorResponse('This slot is already marked as walk-in.');
+            }
+        }
+
+        $bookedSlots = DB::connection('mysql')
+            ->table('neoura.timeslot')
+            ->select('start_time', 'end_time')
+            ->whereRaw('DATE(date) = ?', [$bookingDate])
+            ->where('is_booked', 1)
+            ->get();
+
+        foreach ($bookedSlots as $slot) {
+            $existingStart = $this->toMinutes(substr((string) ($slot->start_time ?? ''), 0, 5));
+            $existingEnd = $this->toMinutes(substr((string) ($slot->end_time ?? ''), 0, 5));
+            if ($existingStart < 0 || $existingEnd <= $existingStart) {
+                continue;
+            }
+
+            if ($this->isOverlap($startMinutes, $endMinutes, $existingStart, $existingEnd)) {
+                return $errorResponse('This slot is already used.');
+            }
+        }
+
+        $website = $this->websiteSettings();
+        $operationalOpen = $this->normalizeOperationalTime((string) ($website['operational_open'] ?? ''), '10:00');
+        $operationalClose = $this->normalizeOperationalTime((string) ($website['operational_close'] ?? ''), '22:00');
+        if ($this->toMinutes($operationalClose) <= $this->toMinutes($operationalOpen)) {
+            $operationalOpen = '10:00';
+            $operationalClose = '22:00';
+        }
+
+        $openMinutes = $this->toMinutes($operationalOpen);
+        $closeMinutes = $this->toMinutes($operationalClose);
+        if ($startMinutes < $openMinutes || $endMinutes > $closeMinutes) {
+            return $errorResponse('Walk-in duration exceeds operational hours.');
+        }
+
+        $serviceId = $this->resolveServiceId($bookingPackage);
+        if ($serviceId <= 0) {
+            return $errorResponse('Service package is invalid.');
+        }
+
+        $bookingCode = $this->generateBookingCode();
+        $priceSnapshot = (string) ($bookingPackage['price'] ?? '0');
+        $note = 'Walk-in: ' . $customerName . ' (' . $selectedPlan . ')';
+        $actor = trim((string) ($adminAuth['username'] ?? ''));
+
+        DB::connection('mysql')->transaction(function () use (
+            $bookingDate,
+            $startTime,
+            $endTime,
+            $serviceId,
+            $customerName,
+            $priceSnapshot,
+            $bookingCode,
+            $note,
+            $actor
+        ) {
+            $slotId = DB::connection('mysql')
+                ->table('neoura.timeslot')
+                ->insertGetId([
+                    'serviceid' => $serviceId,
+                    'date' => $bookingDate,
+                    'start_time' => $startTime . ':00',
+                    'end_time' => $endTime . ':00',
+                    'is_booked' => 1,
+                ]);
+
+            $bookingId = DB::connection('mysql')
+                ->table('neoura.booking')
+                ->insertGetId([
+                    'name' => $customerName,
+                    'email' => 'walkin-' . strtolower(Str::random(6)) . '@local.invalid',
+                    'phonenumber' => 'WALKIN',
+                    'serviceid' => $serviceId,
+                    'service_price_snapshot' => $priceSnapshot,
+                    'slotid' => $slotId,
+                    'status' => 'Approved',
+                    'bookingcode' => $bookingCode,
+                ]);
+
+            DB::connection('mysql')
+                ->table('neoura.payment')
+                ->insert([
+                    'bookingid' => $bookingId,
+                    'paymentdate' => now()->toDateTimeString(),
+                    'bank' => 'Walk-in',
+                    'proof' => '',
+                    'validated_at' => now()->toDateTimeString(),
+                ]);
+
+            $this->ensureWalkInTimeSlotSchema();
+            DB::connection('mysql')
+                ->table('neoura.walkin_timeslot_block')
+                ->insert([
+                    'date' => $bookingDate,
+                    'start_time' => $startTime . ':00',
+                    'end_time' => $endTime . ':00',
+                    'note' => mb_substr($note, 0, 255),
+                    'is_active' => 1,
+                    'created_by' => $actor,
+                    'created_at' => now()->toDateTimeString(),
+                    'updated_at' => now()->toDateTimeString(),
+                ]);
+        });
+
+        $request->attributes->set('activity_action_override', 'Create Walk-In Slot');
+        $request->attributes->set(
+            'activity_detail_override',
+            'Walk-in by ' . $customerName . '; package ' . $selectedPlan . '; slot ' . $bookingDate . ' ' . $startTime . '-' . $endTime
+        );
+
+        if ($isAjaxRequest) {
+            return response()->json(['message' => 'Walk-in saved and recorded to financial report.']);
+        }
+
+        return redirect()->route('admin.timeslot')->with('status', 'Walk-in saved and recorded to financial report.');
+    }
+
+    public function adminTimeSlotDelete(Request $request, int $blockid)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->canSeeAdminMenu($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+        if (!$this->canAccessSidebarMenu($adminAuth, 'timeslot')) {
+            return $this->sidebarPermissionDenied($request);
+        }
+
+        $this->ensureWalkInTimeSlotSchema();
+        $target = DB::connection('mysql')
+            ->table('neoura.walkin_timeslot_block')
+            ->select('blockid', 'date', 'start_time', 'end_time')
+            ->where('blockid', $blockid)
+            ->first();
+
+        if (!$target) {
+            return redirect()->route('admin.timeslot')->withErrors(['timeslot' => 'Blocked slot not found.']);
+        }
+
+        DB::connection('mysql')
+            ->table('neoura.walkin_timeslot_block')
+            ->where('blockid', $blockid)
+            ->delete();
+
+        $deletedDate = substr((string) ($target->date ?? ''), 0, 10);
+        $deletedStart = substr((string) ($target->start_time ?? ''), 0, 5);
+        $deletedEnd = substr((string) ($target->end_time ?? ''), 0, 5);
+
+        $request->attributes->set('activity_action_override', 'Delete Time Slot Block');
+        $request->attributes->set(
+            'activity_detail_override',
+            'Deleted walk-in slot on ' . $deletedDate . ' from ' . $deletedStart . ' to ' . $deletedEnd
+        );
+
+        return redirect()
+            ->route('admin.timeslot', ['date' => $deletedDate])
+            ->with('status', 'Blocked time slot deleted.');
+    }
+
     public function adminUserData(Request $request)
     {
         $adminAuth = $request->session()->get('admin_auth');
@@ -4451,6 +5191,36 @@ class Ctrl extends Controller
 
         if (!$snapshotColumn) {
             $connection->statement('ALTER TABLE neoura.booking ADD COLUMN service_price_snapshot VARCHAR(255) NULL AFTER serviceid');
+        }
+    }
+
+    private function ensureWalkInTimeSlotSchema(): void
+    {
+        $connection = DB::connection('mysql');
+        $schemaName = 'neoura';
+
+        $tableExists = $connection->selectOne(
+            'SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?',
+            [$schemaName, 'walkin_timeslot_block']
+        );
+
+        if (!$tableExists) {
+            $connection->statement(
+                'CREATE TABLE neoura.walkin_timeslot_block (
+                    blockid INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    date DATE NOT NULL,
+                    start_time TIME NOT NULL,
+                    end_time TIME NOT NULL,
+                    note VARCHAR(255) NULL,
+                    is_active TINYINT(1) NOT NULL DEFAULT 1,
+                    created_by VARCHAR(100) NULL,
+                    created_at DATETIME NULL,
+                    updated_at DATETIME NULL,
+                    PRIMARY KEY (blockid),
+                    INDEX idx_walkin_date (date),
+                    INDEX idx_walkin_active (is_active)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+            );
         }
     }
 
@@ -7329,27 +8099,28 @@ class Ctrl extends Controller
             'slides.*.title' => ['required', 'string', 'max:120'],
             'slides.*.description' => ['required', 'string', 'max:255'],
             'slides.*.existing_image' => ['nullable', 'string', 'max:255'],
-            'slides.*.image' => ['nullable', 'image', 'max:3072'],
+            'slides.*.image' => ['nullable', 'image', 'max:10240'],
         ]);
 
         $beforeSlides = $this->carouselSlides();
         $beforeAutoplayMs = (int) ($this->carouselSettings()['autoplay_ms'] ?? $this->defaultCarouselAutoplayMs());
         $slides = [];
-        foreach (array_values($validated['slides']) as $index => $slideData) {
+        foreach ($validated['slides'] as $slideKey => $slideData) {
+            $slideIndex = (int) $slideKey;
             $existingPath = trim((string) ($slideData['existing_image'] ?? ''));
             if (!Str::startsWith($existingPath, 'images/carousel/')) {
                 $existingPath = '';
             }
 
             $imagePath = $existingPath;
-            $file = $request->file("slides.$index.image");
+            $file = $slideData['image'] ?? $request->file("slides.$slideKey.image");
             if ($file) {
                 $directory = public_path('images/carousel');
                 if (!is_dir($directory)) {
                     mkdir($directory, 0755, true);
                 }
 
-                $filename = 'carousel-' . ($index + 1) . '-' . time() . '-' . Str::random(8) . '.' . $file->getClientOriginalExtension();
+                $filename = 'carousel-' . ($slideIndex + 1) . '-' . time() . '-' . Str::random(8) . '.' . $file->getClientOriginalExtension();
                 $file->move($directory, $filename);
                 $imagePath = 'images/carousel/' . $filename;
             }
@@ -7415,6 +8186,73 @@ class Ctrl extends Controller
         }
 
         return redirect()->route('home')->with('status', 'About Us updated.');
+    }
+
+    public function updateAboutImageSwitcher(Request $request)
+    {
+        $adminAuth = $request->session()->get('admin_auth');
+        if (!$this->isSuperAdmin($adminAuth)) {
+            return response()->view('errors.403', ['website' => $this->websiteSettings()], 403);
+        }
+
+        $validated = $request->validate([
+            'about_images' => ['required', 'array', 'min:1', 'max:12'],
+            'about_images.*.existing_image' => ['nullable', 'string', 'max:255'],
+            'about_images.*.image' => ['nullable', 'image', 'max:20480'],
+        ]);
+
+        $slides = [];
+        foreach ($validated['about_images'] as $rowKey => $row) {
+            $rowIndex = (int) $rowKey;
+            $existingPath = trim((string) ($row['existing_image'] ?? ''));
+            if (!Str::startsWith($existingPath, ['images/about-switcher/', 'images/carousel/'])) {
+                $existingPath = '';
+            }
+
+            $imagePath = $existingPath;
+            $file = $row['image'] ?? $request->file("about_images.$rowKey.image");
+            if ($file) {
+                $directory = public_path('images/about-switcher');
+                if (!is_dir($directory)) {
+                    mkdir($directory, 0755, true);
+                }
+
+                $filename = 'about-switcher-' . ($rowIndex + 1) . '-' . time() . '-' . Str::random(8) . '.' . $file->getClientOriginalExtension();
+                $file->move($directory, $filename);
+                $imagePath = 'images/about-switcher/' . $filename;
+            }
+
+            if ($imagePath !== '') {
+                $slides[] = ['image_path' => $imagePath];
+            }
+        }
+
+        if (empty($slides)) {
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => __('ui.home.about_images_required'),
+                    'errors' => [
+                        'about_images' => [__('ui.home.about_images_required')],
+                    ],
+                ], 422);
+            }
+
+            return back()->withErrors(['about_images' => __('ui.home.about_images_required')])->withInput();
+        }
+
+        $this->saveAboutImageSwitcherSlides($slides);
+        $decoratedSlides = $this->decorateAboutImageSwitcherSlides($slides);
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'status' => 'ok',
+                'message' => __('ui.home.about_images_updated'),
+                'slides' => $decoratedSlides,
+            ]);
+        }
+
+        return redirect()->route('home')->with('status', __('ui.home.about_images_updated'));
     }
 
     public function updateContactContent(Request $request)

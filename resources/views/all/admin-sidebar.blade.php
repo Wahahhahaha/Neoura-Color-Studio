@@ -37,6 +37,16 @@
                 'require_permission' => true,
             ],
             [
+                'key' => 'timeslot',
+                'label' => __('ui.sidebar.time_slot'),
+                'title' => __('ui.sidebar.time_slot'),
+                'route_name' => 'admin.timeslot',
+                'href' => route('admin.timeslot'),
+                'icon' => 'M12 7v5l3 2m6-2a9 9 0 1 1-18 0 9 9 0 0 1 18 0z',
+                'always' => false,
+                'require_permission' => true,
+            ],
+            [
                 'key' => 'user',
                 'label' => __('ui.sidebar.user_data'),
                 'title' => __('ui.sidebar.user_data'),

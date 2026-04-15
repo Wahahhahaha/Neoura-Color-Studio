@@ -170,6 +170,8 @@ class AdminActivityLogger
             'admin.userdata.reset_password' => 'Reset User Password',
             'admin.userdata.delete' => 'Delete User',
             'admin.payment.update' => 'Update Payment Validation',
+            'admin.timeslot.store' => 'Create Time Slot Block',
+            'admin.timeslot.delete' => 'Delete Time Slot Block',
             'account.update' => 'Update Account',
             'superadmin.recyclebin.restore' => 'Restore Recycle Item',
             'superadmin.recyclebin.delete_permanent' => 'Delete Recycle Item Permanently',
@@ -177,6 +179,7 @@ class AdminActivityLogger
             'superadmin.permission.update' => 'Update Sidebar Permission',
             'carousel.update' => 'Update Home Carousel',
             'about.update' => 'Update About Content',
+            'about.images.update' => 'Update About Image Switcher',
         ];
 
         if ($routeName !== '' && isset($map[$routeName])) {
